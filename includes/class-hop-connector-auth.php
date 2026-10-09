@@ -51,11 +51,33 @@ class Hop_Connector_Auth {
 	 * @return true|WP_Error
 	 */
 	private static function authenticate( WP_REST_Request $request, $allow_pending ) {
-		$key_id    = (string) $request->get_header( 'x_hop_key_id' );
-		$timestamp = (string) $request->get_header( 'x_hop_timestamp' );
-		$nonce     = (string) $request->get_header( 'x_hop_nonce' );
-		$signature = (string) $request->get_header( 'x_hop_signature' );
+		return self::verify(
+			$request->get_method(),
+			$request->get_route(),
+			(string) $request->get_header( 'x_hop_key_id' ),
+			(string) $request->get_header( 'x_hop_timestamp' ),
+			(string) $request->get_header( 'x_hop_nonce' ),
+			(string) $request->get_header( 'x_hop_signature' ),
+			(string) $request->get_body(),
+			$allow_pending
+		);
+	}
 
+	/**
+	 * Same checks without a WP_REST_Request, for the rescue endpoint that runs
+	 * before the REST API exists.
+	 *
+	 * @param  string $method         HTTP method.
+	 * @param  string $route          Signed route.
+	 * @param  string $key_id         Key identifier header.
+	 * @param  string $timestamp      Timestamp header.
+	 * @param  string $nonce          Nonce header.
+	 * @param  string $signature      Signature header.
+	 * @param  string $body           Raw request body.
+	 * @param  bool   $allow_pending  Whether the pending key is accepted.
+	 * @return true|WP_Error
+	 */
+	public static function verify( $method, $route, $key_id, $timestamp, $nonce, $signature, $body, $allow_pending = false ) {
 		if ( ! self::ip_is_allowed() ) {
 			return self::deny( 'hop_ip_denied' );
 		}
@@ -77,12 +99,12 @@ class Hop_Connector_Auth {
 		$valid = Hop_Connector_Signature::verify(
 			$signature,
 			$key['secret'],
-			$request->get_method(),
-			$request->get_route(),
+			$method,
+			$route,
 			$timestamp,
 			$nonce,
 			$key_id,
-			(string) $request->get_body()
+			$body
 		);
 
 		if ( ! $valid ) {

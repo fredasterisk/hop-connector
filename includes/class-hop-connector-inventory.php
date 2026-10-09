@@ -26,6 +26,8 @@ class Hop_Connector_Inventory {
 			'site_name'         => wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ),
 			'multisite'         => is_multisite(),
 			'maintenance'       => file_exists( ABSPATH . '.maintenance' ),
+			'rescue'            => defined( 'HOP_CONNECTOR_RESCUE' ),
+			'last_fatal'        => get_option( 'hop_connector_last_fatal', null ),
 			'server_time'       => time(),
 		);
 	}

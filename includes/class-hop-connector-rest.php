@@ -68,6 +68,104 @@ class Hop_Connector_Rest {
 				),
 			)
 		);
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/updates/refresh',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'updates_refresh' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/updates/apply',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'updates_apply' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'type'          => array(
+						'type'     => 'string',
+						'required' => true,
+						'enum'     => array( 'plugin', 'theme', 'core' ),
+					),
+					'slug'          => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'expected_from' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'expected_to'   => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/rollback',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rollback' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'backup_id' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+	}
+
+	/**
+	 * Check for updates now and return the fresh inventory.
+	 *
+	 * @return WP_REST_Response
+	 */
+	public static function updates_refresh() {
+		Hop_Connector_Updater::refresh();
+
+		return self::respond( Hop_Connector_Inventory::inventory() );
+	}
+
+	/**
+	 * Apply one update.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function updates_apply( WP_REST_Request $request ) {
+		$result = Hop_Connector_Updater::apply(
+			(string) $request->get_param( 'type' ),
+			(string) $request->get_param( 'slug' ),
+			(string) $request->get_param( 'expected_from' ),
+			(string) $request->get_param( 'expected_to' )
+		);
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Restore the backup taken before an update.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function rollback( WP_REST_Request $request ) {
+		$result = Hop_Connector_Updater::rollback( (string) $request->get_param( 'backup_id' ) );
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
 	}
 
 	/**

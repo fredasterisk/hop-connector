@@ -12,6 +12,14 @@ global $wpdb;
 delete_option( 'hop_connector_key' );
 delete_option( 'hop_connector_pending_key' );
 delete_option( 'hop_connector_allowed_ips' );
+delete_option( 'hop_connector_update_lock' );
+delete_option( 'hop_connector_backups' );
+delete_option( 'hop_connector_backup_dir' );
+delete_option( 'hop_connector_last_fatal' );
+
+if ( file_exists( WPMU_PLUGIN_DIR . '/hop-connector-rescue.php' ) ) {
+	wp_delete_file( WPMU_PLUGIN_DIR . '/hop-connector-rescue.php' );
+}
 
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall cleanup of our own rows.
 $wpdb->query(

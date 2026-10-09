@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Hop Connector
  * Description:       Connecte ce site à la plateforme de gestion Hop (inventaire, mises à jour, connexion en un clic) par des requêtes signées.
- * Version:           0.1.0
+ * Version:           0.2.0
  * Requires at least: 6.5
  * Requires PHP:      7.4
  * Author:            Fred Robert
@@ -15,7 +15,10 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'HOP_CONNECTOR_VERSION', '0.1.0' );
+if ( ! defined( 'HOP_CONNECTOR_VERSION' ) ) {
+	define( 'HOP_CONNECTOR_VERSION', '0.2.0' );
+}
+
 define( 'HOP_CONNECTOR_DIR', plugin_dir_path( __FILE__ ) );
 
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-signature.php';
@@ -23,6 +26,8 @@ require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-keys.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-auth.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-inventory.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-login.php';
+require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-updater.php';
+require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-rescue.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-rest.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-admin.php';
 
@@ -34,9 +39,21 @@ add_action( 'admin_post_hop_connector_disconnect', array( 'Hop_Connector_Admin',
 add_action( 'admin_post_hop_connector_save', array( 'Hop_Connector_Admin', 'handle_save' ) );
 add_action( 'hop_connector_cleanup', array( 'Hop_Connector_Auth', 'cleanup_nonces' ) );
 
+// Reinstall the rescue loader after a connector update or a site migration.
+add_action(
+	'admin_init',
+	static function () {
+		if ( ! defined( 'HOP_CONNECTOR_RESCUE' ) && current_user_can( 'manage_options' ) ) {
+			Hop_Connector_Rescue::install();
+		}
+	}
+);
+
 register_activation_hook(
 	__FILE__,
 	static function () {
+		Hop_Connector_Rescue::install();
+
 		if ( ! wp_next_scheduled( 'hop_connector_cleanup' ) ) {
 			wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', 'hop_connector_cleanup' );
 		}
@@ -46,6 +63,7 @@ register_activation_hook(
 register_deactivation_hook(
 	__FILE__,
 	static function () {
+		Hop_Connector_Rescue::uninstall();
 		wp_clear_scheduled_hook( 'hop_connector_cleanup' );
 	}
 );
