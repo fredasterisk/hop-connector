@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<ruleset name="Hop Connector">
+	<description>WordPress Coding Standards for the Hop Connector plugin.</description>
+
+	<file>.</file>
+
+	<!-- Shared file, copied as is from its reference. -->
+	<exclude-pattern>includes/github-updater.php</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg value="sp"/>
+
+	<config name="minimum_wp_version" value="6.5"/>
+	<config name="testVersion" value="7.4-"/>
+
+	<rule ref="WordPress"/>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="hop-connector"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				
+				<element value="hop_connector"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>

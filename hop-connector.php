@@ -9,6 +9,7 @@
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       hop-connector
+ * Update URI:        https://github.com/fredasterisk/hop-connector
  *
  * @package Hop_Connector
  */
@@ -20,6 +21,10 @@ if ( ! defined( 'HOP_CONNECTOR_VERSION' ) ) {
 }
 
 define( 'HOP_CONNECTOR_DIR', plugin_dir_path( __FILE__ ) );
+
+// Mises à jour en un clic depuis les releases GitHub.
+require_once __DIR__ . '/includes/github-updater.php';
+Asterisk_GitHub_Updater::register( __FILE__ );
 
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-signature.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-keys.php';
