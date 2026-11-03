@@ -72,6 +72,97 @@ class Hop_Connector_Updater {
 	}
 
 	/**
+	 * Activate, deactivate or delete one plugin.
+	 *
+	 * A plugin is deleted only once inactive, and its directory is copied
+	 * aside first: the deletion can be undone with rollback().
+	 *
+	 * @param  string $slug    Plugin directory name.
+	 * @param  string $action  activate, deactivate or delete.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public static function change_plugin( $slug, $action ) {
+		self::load_admin();
+
+		$file = self::plugin_file( $slug );
+
+		if ( ! $file ) {
+			return new WP_Error( 'hop_not_installed', __( 'Extension introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+		}
+
+		// The connector never acts on itself: Hop would lose the site.
+		if ( plugin_basename( HOP_CONNECTOR_DIR . 'hop-connector.php' ) === $file ) {
+			return new WP_Error( 'hop_forbidden', __( 'Le connecteur ne peut pas agir sur lui-même.', 'hop-connector' ), array( 'status' => 403 ) );
+		}
+
+		if ( ! self::acquire_lock() ) {
+			return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'hop-connector' ), array( 'status' => 409 ) );
+		}
+
+		try {
+			$active    = is_plugin_active( $file ) || is_plugin_active_for_network( $file );
+			$network   = is_multisite() && is_plugin_active_for_network( $file );
+			$backup_id = null;
+
+			switch ( $action ) {
+				case 'activate':
+					if ( ! $active ) {
+						// A plugin that crashes on load is not recorded as active.
+						$result = activate_plugin( $file, '', $network, false );
+
+						if ( is_wp_error( $result ) ) {
+							return new WP_Error( 'hop_activation_failed', $result->get_error_message(), array( 'status' => 409 ) );
+						}
+					}
+					break;
+
+				case 'deactivate':
+					if ( $active ) {
+						deactivate_plugins( array( $file ), false, $network );
+					}
+					break;
+
+				default:
+					if ( $active ) {
+						return new WP_Error( 'hop_plugin_active', __( 'Désactivez l\'extension avant de la supprimer.', 'hop-connector' ), array( 'status' => 409 ) );
+					}
+
+					$plugins   = get_plugins();
+					$backup_id = self::backup( 'plugin', $slug, (string) $plugins[ $file ]['Version'] );
+
+					if ( is_wp_error( $backup_id ) ) {
+						return $backup_id;
+					}
+
+					$deleted = delete_plugins( array( $file ) );
+
+					if ( true !== $deleted ) {
+						return new WP_Error(
+							'hop_delete_failed',
+							is_wp_error( $deleted ) ? $deleted->get_error_message() : __( 'Suppression impossible.', 'hop-connector' ),
+							array( 'status' => 500 )
+						);
+					}
+			}
+
+			wp_clean_plugins_cache( true );
+			self::purge_caches();
+
+			$installed = array_key_exists( $file, get_plugins() );
+
+			return array(
+				'status'    => 'delete' === $action ? 'deleted' : ( $action . 'd' ),
+				'slug'      => $slug,
+				'active'    => $installed && ( is_plugin_active( $file ) || is_plugin_active_for_network( $file ) ),
+				'installed' => $installed,
+				'backup_id' => $backup_id,
+			);
+		} finally {
+			delete_option( self::OPTION_LOCK );
+		}
+	}
+
+	/**
 	 * Restore a backup taken before an update.
 	 *
 	 * @param  string $backup_id  Identifier returned by apply().

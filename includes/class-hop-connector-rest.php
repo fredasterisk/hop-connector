@@ -112,6 +112,28 @@ class Hop_Connector_Rest {
 
 		register_rest_route(
 			self::REST_NAMESPACE,
+			'/plugins/state',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'plugin_state' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'slug'   => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'action' => array(
+						'type'     => 'string',
+						'required' => true,
+						'enum'     => array( 'activate', 'deactivate', 'delete' ),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
 			'/rollback',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -151,6 +173,21 @@ class Hop_Connector_Rest {
 			(string) $request->get_param( 'slug' ),
 			(string) $request->get_param( 'expected_from' ),
 			(string) $request->get_param( 'expected_to' )
+		);
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Activate, deactivate or delete one plugin.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function plugin_state( WP_REST_Request $request ) {
+		$result = Hop_Connector_Updater::change_plugin(
+			(string) $request->get_param( 'slug' ),
+			(string) $request->get_param( 'action' )
 		);
 
 		return is_wp_error( $result ) ? $result : self::respond( $result );
