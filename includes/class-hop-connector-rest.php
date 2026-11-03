@@ -134,6 +134,33 @@ class Hop_Connector_Rest {
 
 		register_rest_route(
 			self::REST_NAMESPACE,
+			'/backups/database',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'database_snapshot' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/backups/database/restore',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'database_restore' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'backup_id' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
 			'/rollback',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -189,6 +216,29 @@ class Hop_Connector_Rest {
 			(string) $request->get_param( 'slug' ),
 			(string) $request->get_param( 'action' )
 		);
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Copy the database aside before updates.
+	 *
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function database_snapshot() {
+		$result = Hop_Connector_Database::snapshot();
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Put the database back as it was in a snapshot.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function database_restore( WP_REST_Request $request ) {
+		$result = Hop_Connector_Database::restore( (string) $request->get_param( 'backup_id' ) );
 
 		return is_wp_error( $result ) ? $result : self::respond( $result );
 	}

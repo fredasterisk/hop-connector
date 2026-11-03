@@ -465,7 +465,7 @@ class Hop_Connector_Updater {
 	 *
 	 * @return string|WP_Error
 	 */
-	private static function backup_root() {
+	public static function backup_root() {
 		$suffix = get_option( 'hop_connector_backup_dir' );
 
 		if ( ! is_string( $suffix ) || ! preg_match( '/^[a-f0-9]{24}$/', $suffix ) ) {
