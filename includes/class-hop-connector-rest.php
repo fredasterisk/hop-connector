@@ -256,14 +256,22 @@ class Hop_Connector_Rest {
 	}
 
 	/**
-	 * Confirm the pairing: the pending key becomes the active key.
+	 * Confirm the pairing: the pending key becomes the active key, with the
+	 * new secret the platform sends when it supports rotation.
 	 *
+	 * @param  WP_REST_Request $request  Request.
 	 * @return WP_REST_Response
 	 */
-	public static function handshake() {
-		Hop_Connector_Keys::promote_pending();
+	public static function handshake( WP_REST_Request $request ) {
+		$pending = Hop_Connector_Keys::pending();
+		$rotated = false;
 
-		return self::respond( Hop_Connector_Inventory::status() );
+		// Only the pending key being confirmed may choose its replacement.
+		if ( $pending && hash_equals( $pending['key_id'], (string) $request->get_header( 'x_hop_key_id' ) ) ) {
+			$rotated = Hop_Connector_Keys::promote_pending( $request->get_param( 'secret' ) );
+		}
+
+		return self::respond( array_merge( Hop_Connector_Inventory::status(), array( 'rotated' => $rotated ) ) );
 	}
 
 	/**

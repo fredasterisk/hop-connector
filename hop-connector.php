@@ -37,6 +37,11 @@ require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-rescue.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-rest.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-admin.php';
 
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+	require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-cli.php';
+	WP_CLI::add_command( 'hop-connector', 'Hop_Connector_Cli' );
+}
+
 add_action( 'rest_api_init', array( 'Hop_Connector_Rest', 'register_routes' ) );
 add_action( 'init', array( 'Hop_Connector_Login', 'maybe_consume' ), 1 );
 add_action( 'admin_menu', array( 'Hop_Connector_Admin', 'register_page' ) );
