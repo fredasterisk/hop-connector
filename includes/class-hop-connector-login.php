@@ -167,6 +167,12 @@ class Hop_Connector_Login {
 			return;
 		}
 
+		// Only the visit itself uses the single-use link: a browser may first
+		// send OPTIONS (CORS preflight), and link checkers send HEAD.
+		if ( ! isset( $_SERVER['REQUEST_METHOD'] ) || 'GET' !== sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) {
+			return;
+		}
+
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Authenticated by the single-use token.
 		$token = sanitize_text_field( wp_unslash( $_GET[ self::QUERY_VAR ] ) );
 
