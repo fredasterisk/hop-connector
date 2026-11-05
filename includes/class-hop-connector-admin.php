@@ -25,10 +25,21 @@ class Hop_Connector_Admin {
 		add_options_page(
 			__( 'Hop Connector', 'hop-connector' ),
 			__( 'Hop Connector', 'hop-connector' ),
-			'manage_options',
+			self::capability(),
 			self::PAGE,
 			array( __CLASS__, 'render' )
 		);
+	}
+
+	/**
+	 * Who may pair the site. On a multisite network, only a network
+	 * administrator: the connector acts on the whole network, and logs in as
+	 * an administrator who may be a super admin.
+	 *
+	 * @return string
+	 */
+	public static function capability() {
+		return is_multisite() ? 'manage_network_options' : 'manage_options';
 	}
 
 	/**
@@ -87,7 +98,7 @@ class Hop_Connector_Admin {
 	 * @return void
 	 */
 	public static function render() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( self::capability() ) ) {
 			return;
 		}
 
@@ -164,7 +175,7 @@ class Hop_Connector_Admin {
 	 * @return void
 	 */
 	private static function guard( $action ) {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( self::capability() ) ) {
 			wp_die( esc_html__( 'Permission refusée.', 'hop-connector' ), '', array( 'response' => 403 ) );
 		}
 

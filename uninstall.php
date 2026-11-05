@@ -7,7 +7,19 @@
 
 defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
-global $wpdb;
+global $wpdb, $wp_filesystem;
+
+// The copies of the database hold the site's personal data, and the plugin
+// copies hold old code: nothing stays behind the connector.
+$hop_connector_backup_dir = get_option( 'hop_connector_backup_dir' );
+
+if ( is_string( $hop_connector_backup_dir ) && preg_match( '/^[a-f0-9]{24}$/', $hop_connector_backup_dir ) && is_dir( WP_CONTENT_DIR . '/hop-connector-backups-' . $hop_connector_backup_dir ) ) {
+	require_once ABSPATH . 'wp-admin/includes/file.php';
+
+	if ( 'direct' === get_filesystem_method() && WP_Filesystem() ) {
+		$wp_filesystem->delete( WP_CONTENT_DIR . '/hop-connector-backups-' . $hop_connector_backup_dir, true );
+	}
+}
 
 delete_option( 'hop_connector_key' );
 delete_option( 'hop_connector_pending_key' );

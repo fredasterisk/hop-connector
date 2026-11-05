@@ -22,6 +22,18 @@ class Hop_Connector_Database {
 	const ROWS_PER_INSERT = 100;
 
 	/**
+	 * A copy holds every personal record of the site: it is not kept longer
+	 * than needed to undo a recent update.
+	 */
+	const MAX_AGE = 30 * DAY_IN_SECONDS;
+
+	/**
+	 * The connector's own options: its key, nonces and login tokens never go
+	 * into a copy, and a restoration never brings back an older state of them.
+	 */
+	const OWN_OPTIONS = 'hop_connector_';
+
+	/**
 	 * Export every table of this WordPress installation.
 	 *
 	 * @return array<string,mixed>|WP_Error
@@ -73,6 +85,7 @@ class Hop_Connector_Database {
 		}
 
 		gzclose( $file );
+		self::protect( $path );
 		self::prune();
 
 		return array(
@@ -107,6 +120,7 @@ class Hop_Connector_Database {
 		}
 
 		$statements = 0;
+		$own        = self::own_options();
 
 		// A statement that fails must stop the restoration, not be skipped silently.
 		$previous = $wpdb->suppress_errors( true );
@@ -130,7 +144,9 @@ class Hop_Connector_Database {
 				gzclose( $file );
 				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Leave the session as found.
 				$wpdb->query( 'SET FOREIGN_KEY_CHECKS=1' );
+				self::put_back_own_options( $own );
 				$wpdb->suppress_errors( $previous );
+				wp_cache_flush();
 
 				return new WP_Error(
 					'hop_restore_failed',
@@ -146,6 +162,7 @@ class Hop_Connector_Database {
 		}
 
 		gzclose( $file );
+		self::put_back_own_options( $own );
 		$wpdb->suppress_errors( $previous );
 		wp_cache_flush();
 
@@ -200,10 +217,12 @@ class Hop_Connector_Database {
 
 		$offset = 0;
 		$total  = 0;
+		// The connector's key never travels in a copy.
+		$where = $table === $wpdb->options ? $wpdb->prepare( ' WHERE option_name NOT LIKE %s', $wpdb->esc_like( self::OWN_OPTIONS ) . '%' ) : '';
 
 		do {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from SHOW TABLES, integers only.
-			$rows = $wpdb->get_results( sprintf( 'SELECT * FROM `%s` LIMIT %d OFFSET %d', $table, self::ROWS_PER_GO, $offset ), ARRAY_N );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table name from SHOW TABLES, prepared condition, integers only.
+			$rows = $wpdb->get_results( sprintf( 'SELECT * FROM `%s`%s LIMIT %d OFFSET %d', $table, $where, self::ROWS_PER_GO, $offset ), ARRAY_N );
 
 			if ( null === $rows && '' !== $wpdb->last_error ) {
 				throw new RuntimeException( $wpdb->last_error );
@@ -307,6 +326,84 @@ class Hop_Connector_Database {
 
 		foreach ( array_slice( self::snapshots(), self::KEEP ) as $old ) {
 			wp_delete_file( $root . '/' . $old['backup_id'] . '.sql.gz' );
+		}
+	}
+
+	/**
+	 * Delete the snapshots older than MAX_AGE (hourly cron).
+	 *
+	 * @return void
+	 */
+	public static function purge_expired() {
+		// A site that never took a copy has no directory to look into, and
+		// backup_root() would create one.
+		if ( ! get_option( 'hop_connector_backup_dir' ) ) {
+			return;
+		}
+
+		$root = Hop_Connector_Updater::backup_root();
+
+		foreach ( self::snapshots() as $snapshot ) {
+			if ( $snapshot['created'] < time() - self::MAX_AGE ) {
+				wp_delete_file( $root . '/' . $snapshot['backup_id'] . '.sql.gz' );
+			}
+		}
+	}
+
+	/**
+	 * Readable by the site's own user only: not by the web server, nor by the
+	 * other sites of a shared server. Hosts that refuse chmod keep the default.
+	 *
+	 * @param  string $path  File written.
+	 * @return void
+	 */
+	private static function protect( $path ) {
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- Best effort on any host.
+		@chmod( $path, 0600 );
+	}
+
+	/**
+	 * The connector's rows of the options table, as they are now.
+	 *
+	 * @return list<array{option_name: string, option_value: string, autoload: string}>
+	 */
+	private static function own_options() {
+		global $wpdb;
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Raw rows, put back as they were.
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT option_name, option_value, autoload FROM {$wpdb->options} WHERE option_name LIKE %s",
+				$wpdb->esc_like( self::OWN_OPTIONS ) . '%'
+			),
+			ARRAY_A
+		);
+
+		return is_array( $rows ) ? $rows : array();
+	}
+
+	/**
+	 * After a restoration, the connector is back exactly as it was before it:
+	 * a key revoked since the copy stays revoked, the nonces already used stay
+	 * used, and the list of backups stays current.
+	 *
+	 * @param  list<array{option_name: string, option_value: string, autoload: string}> $rows  Rows read by own_options().
+	 * @return void
+	 */
+	private static function put_back_own_options( array $rows ) {
+		global $wpdb;
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Our own rows, restored below.
+		$wpdb->query(
+			$wpdb->prepare(
+				"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
+				$wpdb->esc_like( self::OWN_OPTIONS ) . '%'
+			)
+		);
+
+		foreach ( $rows as $row ) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Raw row written back unchanged.
+			$wpdb->replace( $wpdb->options, $row, array( '%s', '%s', '%s' ) );
 		}
 	}
 

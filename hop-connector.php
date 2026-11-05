@@ -49,6 +49,8 @@ add_action( 'admin_post_hop_connector_generate', array( 'Hop_Connector_Admin', '
 add_action( 'admin_post_hop_connector_disconnect', array( 'Hop_Connector_Admin', 'handle_disconnect' ) );
 add_action( 'admin_post_hop_connector_save', array( 'Hop_Connector_Admin', 'handle_save' ) );
 add_action( 'hop_connector_cleanup', array( 'Hop_Connector_Auth', 'cleanup_nonces' ) );
+add_action( 'hop_connector_cleanup', array( 'Hop_Connector_Login', 'purge_expired' ) );
+add_action( 'hop_connector_cleanup', array( 'Hop_Connector_Database', 'purge_expired' ) );
 
 // Reinstall the rescue loader after a connector update or a site migration.
 add_action(

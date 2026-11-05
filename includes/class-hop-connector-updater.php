@@ -486,6 +486,13 @@ class Hop_Connector_Updater {
 			file_put_contents( $root . '/index.php', "<?php\n// Silence is golden.\n" );
 		}
 
+		// nginx ignores .htaccess: closing the directory to every other user
+		// keeps the web server (and the other sites of a shared server) from
+		// reading the copies or running the PHP of an old plugin version.
+		// Hosts that refuse chmod keep the default.
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- Best effort on any host.
+		@chmod( $root, 0700 );
+
 		return $root;
 	}
 

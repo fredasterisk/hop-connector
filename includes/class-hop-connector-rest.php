@@ -257,18 +257,26 @@ class Hop_Connector_Rest {
 
 	/**
 	 * Confirm the pairing: the pending key becomes the active key, with the
-	 * new secret the platform sends when it supports rotation.
+	 * new secret the platform sends.
 	 *
 	 * @param  WP_REST_Request $request  Request.
-	 * @return WP_REST_Response
+	 * @return WP_REST_Response|WP_Error
 	 */
 	public static function handshake( WP_REST_Request $request ) {
 		$pending = Hop_Connector_Keys::pending();
 		$rotated = false;
 
-		// Only the pending key being confirmed may choose its replacement.
+		// Only the pending key being confirmed may choose its replacement, and
+		// it must: whoever saw the token pass (a command history, the process
+		// list of a shared server) cannot keep the site's key alongside Hop.
 		if ( $pending && hash_equals( $pending['key_id'], (string) $request->get_header( 'x_hop_key_id' ) ) ) {
-			$rotated = Hop_Connector_Keys::promote_pending( $request->get_param( 'secret' ) );
+			$secret = $request->get_param( 'secret' );
+
+			if ( ! is_string( $secret ) || 1 !== preg_match( '/^[a-f0-9]{64}$/', $secret ) ) {
+				return new WP_Error( 'hop_secret_required', __( 'La confirmation doit fournir le nouveau secret.', 'hop-connector' ), array( 'status' => 400 ) );
+			}
+
+			$rotated = Hop_Connector_Keys::promote_pending( $secret );
 		}
 
 		return self::respond( array_merge( Hop_Connector_Inventory::status(), array( 'rotated' => $rotated ) ) );

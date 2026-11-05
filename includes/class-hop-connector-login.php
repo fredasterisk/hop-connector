@@ -94,6 +94,31 @@ class Hop_Connector_Login {
 	}
 
 	/**
+	 * Delete the tokens nobody used before they expired (hourly cron).
+	 *
+	 * @return void
+	 */
+	public static function purge_expired() {
+		global $wpdb;
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One-off maintenance query on our own rows.
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s LIMIT 500",
+				$wpdb->esc_like( self::OPTION_PREFIX ) . '%'
+			)
+		);
+
+		foreach ( (array) $rows as $row ) {
+			$data = maybe_unserialize( $row->option_value );
+
+			if ( ! is_array( $data ) || (int) ( $data['expires'] ?? 0 ) < time() ) {
+				delete_option( $row->option_name );
+			}
+		}
+	}
+
+	/**
 	 * Oldest administrator account.
 	 *
 	 * @return WP_User|null

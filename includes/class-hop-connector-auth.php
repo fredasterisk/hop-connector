@@ -51,6 +51,14 @@ class Hop_Connector_Auth {
 	 * @return true|WP_Error
 	 */
 	private static function authenticate( WP_REST_Request $request, $allow_pending ) {
+		// Only the signed body may carry parameters: a query string, or a body
+		// read as a form instead of JSON, would escape the signature.
+		$unsigned = array_diff( array_keys( $request->get_query_params() ), array( 'rest_route' ) );
+
+		if ( array() !== $unsigned || ( '' !== (string) $request->get_body() && ! $request->is_json_content_type() ) ) {
+			return self::deny( 'hop_unsigned_parameters' );
+		}
+
 		return self::verify(
 			$request->get_method(),
 			$request->get_route(),
@@ -82,6 +90,12 @@ class Hop_Connector_Auth {
 			return self::deny( 'hop_ip_denied' );
 		}
 
+		// On a network, only the main site answers: it is the one Hop pairs
+		// with, and the connector acts on the whole network from there.
+		if ( is_multisite() && ! is_main_site() ) {
+			return self::deny( 'hop_not_main_site' );
+		}
+
 		if ( '' === $key_id || ! preg_match( '/^[A-Za-z0-9_-]{16,64}$/', $nonce ) ) {
 			return self::deny( 'hop_bad_signature' );
 		}
@@ -111,12 +125,35 @@ class Hop_Connector_Auth {
 			return self::deny( 'hop_bad_signature' );
 		}
 
-		// add_option() fails when the row already exists: a nonce can be used once.
-		if ( ! add_option( self::NONCE_PREFIX . hash( 'sha256', $key_id . '|' . $nonce ), time() + self::NONCE_TTL, '', false ) ) {
+		if ( ! self::remember_nonce( $key_id, $nonce ) ) {
 			return self::deny( 'hop_replay' );
 		}
 
 		return true;
+	}
+
+	/**
+	 * Record a nonce, or tell it was already used. The database decides in a
+	 * single statement: two copies of a request sent at once cannot both pass,
+	 * as they could between the read and the write of add_option().
+	 *
+	 * @param  string $key_id  Key identifier.
+	 * @param  string $nonce   Nonce of the request.
+	 * @return bool Whether the nonce is new.
+	 */
+	private static function remember_nonce( $key_id, $nonce ) {
+		global $wpdb;
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Atomic insert of our own row, never read through the options API.
+		$inserted = $wpdb->query(
+			$wpdb->prepare(
+				"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')",
+				self::NONCE_PREFIX . hash( 'sha256', $key_id . '|' . $nonce ),
+				(string) ( time() + self::NONCE_TTL )
+			)
+		);
+
+		return 1 === $inserted;
 	}
 
 	/**
