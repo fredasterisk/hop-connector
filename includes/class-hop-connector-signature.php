@@ -1,9 +1,12 @@
 <?php
 /**
- * Request signature (HMAC-SHA256), protocol version 1.
+ * Request signature. Version 1: HMAC-SHA256 with a secret shared with the
+ * platform. Version 2: Ed25519, where the site only holds the platform's
+ * public key, which cannot sign anything.
  *
- * This class has no WordPress dependency on purpose: the platform test suite
- * loads it to prove both sides compute the same signature.
+ * Both cover the same canonical string. This class has no WordPress
+ * dependency on purpose: the platform test suite loads it to prove both
+ * sides compute the same signature.
  *
  * @package Hop_Connector
  */
@@ -80,6 +83,40 @@ if ( ! class_exists( 'Hop_Connector_Signature' ) ) {
 			}
 
 			return hash_equals( self::sign( $secret, $method, $route, $timestamp, $nonce, $key_id, $body ), $signature );
+		}
+
+		/**
+		 * Check an Ed25519 signature against the platform's public key.
+		 *
+		 * WordPress provides the sodium functions even where PHP lacks the
+		 * extension (sodium_compat, loaded by wp-includes/compat.php).
+		 *
+		 * @param  string $signature  Signature received, 128 hexadecimal characters.
+		 * @param  string $public_key  Platform public key, 64 hexadecimal characters.
+		 * @param  string $method  HTTP method.
+		 * @param  string $route  REST route.
+		 * @param  string $timestamp  Unix timestamp.
+		 * @param  string $nonce  Nonce.
+		 * @param  string $key_id  Key identifier.
+		 * @param  string $body  Raw request body.
+		 * @return bool
+		 */
+		public static function verify_ed25519( $signature, $public_key, $method, $route, $timestamp, $nonce, $key_id, $body ) {
+			if ( ! is_string( $signature ) || 1 !== preg_match( '/^[a-f0-9]{128}$/', $signature )
+				|| ! is_string( $public_key ) || 1 !== preg_match( '/^[a-f0-9]{64}$/', $public_key )
+				|| ! function_exists( 'sodium_crypto_sign_verify_detached' ) ) {
+				return false;
+			}
+
+			try {
+				return sodium_crypto_sign_verify_detached(
+					(string) hex2bin( $signature ),
+					self::canonical( $method, $route, $timestamp, $nonce, $key_id, $body ),
+					(string) hex2bin( $public_key )
+				);
+			} catch ( Throwable $exception ) {
+				return false;
+			}
 		}
 
 		/**

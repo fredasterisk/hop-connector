@@ -28,6 +28,7 @@ class Hop_Connector_Inventory {
 			'maintenance'       => file_exists( ABSPATH . '.maintenance' ),
 			'rescue'            => defined( 'HOP_CONNECTOR_RESCUE' ),
 			'last_fatal'        => get_option( 'hop_connector_last_fatal', null ),
+			'signing'           => Hop_Connector_Keys::signing(),
 			'server_time'       => time(),
 		);
 	}

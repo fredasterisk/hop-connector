@@ -126,6 +126,19 @@ class Hop_Connector_Admin {
 					);
 					?>
 				</p>
+				<p class="description">
+					<?php
+					$signing = Hop_Connector_Keys::signing();
+
+					if ( 'ed25519' === $signing ) {
+						esc_html_e( 'Ce site ne garde que la clé publique de Hop : lire sa base de données ne permet pas de signer une requête.', 'hop-connector' );
+					} elseif ( 'ed25519_pending' === $signing ) {
+						esc_html_e( 'Passage à la clé publique de Hop en cours : le secret partagé sera retiré à la prochaine requête de Hop.', 'hop-connector' );
+					} else {
+						esc_html_e( 'Ce site garde un secret partagé avec Hop. Hop le remplacera par sa clé publique à sa prochaine synchronisation.', 'hop-connector' );
+					}
+					?>
+				</p>
 			<?php } else { ?>
 				<p><?php esc_html_e( 'Ce site n\'est pas encore appairé.', 'hop-connector' ); ?></p>
 			<?php } ?>

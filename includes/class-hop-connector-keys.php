@@ -1,6 +1,6 @@
 <?php
 /**
- * Storage of the signing key and of the pending pairing token.
+ * Storage of the platform's key and of the pending pairing token.
  *
  * @package Hop_Connector
  */
@@ -8,8 +8,14 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Key lifecycle: a pending key is created from the admin screen, then promoted
- * to the active key by the first valid signed handshake.
+ * Key lifecycle.
+ *
+ * The site ends up holding the platform's Ed25519 public key only: reading
+ * its database, or a copy of it, gives nothing that can sign a request.
+ * A pairing token from the admin screen carries a one-time secret, which the
+ * platform replaces with its public key when it confirms the token. Sites
+ * paired before version 0.8.0 hold a shared secret until the platform moves
+ * them to its public key (offer_public_key(), then drop_secret()).
  */
 class Hop_Connector_Keys {
 
@@ -57,29 +63,46 @@ class Hop_Connector_Keys {
 	/**
 	 * Parse a pairing token.
 	 *
+	 * "hop1" carries a one-time secret, to be replaced at the handshake.
+	 * "hop2" carries the platform's public key: it is no secret, so it may
+	 * show in a command line or a process list.
+	 *
 	 * @param  string $token  Token as shown by the admin screen or sent by the platform.
-	 * @return array{key_id:string,secret:string}|null
+	 * @return array{type:string,key_id:string,secret?:string,public_key?:string}|null
 	 */
 	public static function parse_token( $token ) {
-		if ( ! preg_match( '/^hop1_([a-f0-9]{16})_([a-f0-9]{64})$/', trim( (string) $token ), $matches ) ) {
+		if ( ! preg_match( '/^hop([12])_([a-f0-9]{16})_([a-f0-9]{64})$/', trim( (string) $token ), $matches ) ) {
 			return null;
 		}
 
+		if ( '2' === $matches[1] ) {
+			return array(
+				'type'       => 'public_key',
+				'key_id'     => $matches[2],
+				'public_key' => $matches[3],
+			);
+		}
+
 		return array(
-			'key_id' => $matches[1],
-			'secret' => $matches[2],
+			'type'   => 'secret',
+			'key_id' => $matches[2],
+			'secret' => $matches[3],
 		);
 	}
 
 	/**
 	 * Active key, or null when the site is not paired.
 	 *
-	 * @return array{key_id:string,secret:string,paired_at:int}|null
+	 * @return array{key_id:string,secret?:string,public_key?:string,paired_at:int}|null
 	 */
 	public static function active() {
 		$key = get_option( self::OPTION_ACTIVE );
 
-		return is_array( $key ) && ! empty( $key['key_id'] ) && ! empty( $key['secret'] ) ? $key : null;
+		if ( ! is_array( $key ) || empty( $key['key_id'] ) || ( empty( $key['secret'] ) && empty( $key['public_key'] ) ) ) {
+			return null;
+		}
+
+		return $key;
 	}
 
 	/**
@@ -107,24 +130,26 @@ class Hop_Connector_Keys {
 	 * Find the key (active or pending) matching an identifier.
 	 *
 	 * @param  string $key_id  Key identifier received.
-	 * @return array{secret:string,pending:bool}|null
+	 * @return array{secret:string,public_key:string,pending:bool}|null Empty strings for what the key does not hold.
 	 */
 	public static function find( $key_id ) {
 		$active = self::active();
 
-		if ( $active && hash_equals( $active['key_id'], $key_id ) ) {
+		if ( $active && hash_equals( (string) $active['key_id'], $key_id ) ) {
 			return array(
-				'secret'  => $active['secret'],
-				'pending' => false,
+				'secret'     => isset( $active['secret'] ) ? (string) $active['secret'] : '',
+				'public_key' => isset( $active['public_key'] ) ? (string) $active['public_key'] : '',
+				'pending'    => false,
 			);
 		}
 
 		$pending = self::pending();
 
-		if ( $pending && hash_equals( $pending['key_id'], $key_id ) ) {
+		if ( $pending && hash_equals( (string) $pending['key_id'], $key_id ) ) {
 			return array(
-				'secret'  => $pending['secret'],
-				'pending' => true,
+				'secret'     => (string) $pending['secret'],
+				'public_key' => '',
+				'pending'    => true,
 			);
 		}
 
@@ -132,41 +157,103 @@ class Hop_Connector_Keys {
 	}
 
 	/**
-	 * Promote the pending key to active key.
+	 * Promote the pending key to active key, with the replacement the platform
+	 * sent: its public key, or a new secret from a platform older than the
+	 * connector. Either way, the secret that travelled through a copy-paste or
+	 * a command line stops being valid.
 	 *
-	 * The platform may send a new secret with the handshake, so the one that
-	 * travelled through a copy-paste or a command history stops being valid.
-	 *
-	 * @param  string|null $new_secret  Replacement secret, 64 hexadecimal characters.
-	 * @return bool Whether the secret was replaced.
+	 * @param  array{public_key?:mixed,secret?:mixed} $replacement  Values received.
+	 * @return string|null What the site now holds: public_key or secret; null when nothing was promoted.
 	 */
-	public static function promote_pending( $new_secret = null ) {
+	public static function promote_pending( array $replacement ) {
 		$pending = self::pending();
 
 		if ( ! $pending ) {
+			return null;
+		}
+
+		foreach ( array( 'public_key', 'secret' ) as $kind ) {
+			if ( isset( $replacement[ $kind ] ) && self::is_key( $replacement[ $kind ] ) ) {
+				self::activate( (string) $pending['key_id'], array( $kind => $replacement[ $kind ] ) );
+
+				return $kind;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Make a key the only valid one.
+	 *
+	 * @param  string                $key_id    Key identifier.
+	 * @param  array<string, string> $material  public_key or secret.
+	 * @return void
+	 */
+	public static function activate( $key_id, array $material ) {
+		delete_option( self::OPTION_ACTIVE );
+		add_option( self::OPTION_ACTIVE, array_merge( array( 'key_id' => $key_id ), $material, array( 'paired_at' => time() ) ), '', false );
+		delete_option( self::OPTION_PENDING );
+	}
+
+	/**
+	 * First step of the move from a shared secret to the platform's public
+	 * key. The secret keeps working until the platform proves, by a request
+	 * signed with its private key, that it holds the matching key: an answer
+	 * lost on the way cannot cut the site off.
+	 *
+	 * @param  string $public_key  Platform public key, 64 hexadecimal characters.
+	 * @return bool Whether the key was recorded.
+	 */
+	public static function offer_public_key( $public_key ) {
+		$active = self::active();
+
+		if ( ! $active || empty( $active['secret'] ) || ! self::is_key( $public_key ) ) {
 			return false;
 		}
 
-		$rotated = is_string( $new_secret ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $new_secret );
+		$active['public_key'] = $public_key;
 
-		if ( $rotated ) {
-			$pending['secret'] = $new_secret;
+		return update_option( self::OPTION_ACTIVE, $active, false ) || self::active() === $active;
+	}
+
+	/**
+	 * Last step of the move: forget the shared secret.
+	 *
+	 * @return bool Whether the site now holds the public key alone.
+	 */
+	public static function drop_secret() {
+		$active = self::active();
+
+		if ( ! $active || empty( $active['public_key'] ) ) {
+			return false;
 		}
 
-		delete_option( self::OPTION_ACTIVE );
-		add_option(
-			self::OPTION_ACTIVE,
-			array(
-				'key_id'    => $pending['key_id'],
-				'secret'    => $pending['secret'],
-				'paired_at' => time(),
-			),
-			'',
-			false
-		);
-		delete_option( self::OPTION_PENDING );
+		if ( isset( $active['secret'] ) ) {
+			unset( $active['secret'] );
+			update_option( self::OPTION_ACTIVE, $active, false );
+		}
 
-		return $rotated;
+		return 'ed25519' === self::signing();
+	}
+
+	/**
+	 * How the platform signs its requests to this site.
+	 *
+	 * @return string|null ed25519, hmac, or ed25519_pending while the move from the secret is under way; null when not paired.
+	 */
+	public static function signing() {
+		$active = self::active();
+
+		if ( ! $active ) {
+			return null;
+		}
+
+		if ( empty( $active['public_key'] ) ) {
+			return 'hmac';
+		}
+
+		return empty( $active['secret'] ) ? 'ed25519' : 'ed25519_pending';
 	}
 
 	/**
@@ -177,5 +264,15 @@ class Hop_Connector_Keys {
 	public static function revoke() {
 		delete_option( self::OPTION_ACTIVE );
 		delete_option( self::OPTION_PENDING );
+	}
+
+	/**
+	 * Shape of a secret or of a public key: 32 bytes, in hexadecimal.
+	 *
+	 * @param  mixed $value  Value received.
+	 * @return bool
+	 */
+	private static function is_key( $value ) {
+		return is_string( $value ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $value );
 	}
 }

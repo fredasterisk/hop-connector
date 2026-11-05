@@ -10,14 +10,21 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 global $wpdb, $wp_filesystem;
 
 // The copies of the database hold the site's personal data, and the plugin
-// copies hold old code: nothing stays behind the connector.
+// copies hold old code: nothing stays behind the connector, wherever the
+// copies were kept (above WordPress, or in wp-content).
 $hop_connector_backup_dir = get_option( 'hop_connector_backup_dir' );
 
-if ( is_string( $hop_connector_backup_dir ) && preg_match( '/^[a-f0-9]{24}$/', $hop_connector_backup_dir ) && is_dir( WP_CONTENT_DIR . '/hop-connector-backups-' . $hop_connector_backup_dir ) ) {
+if ( is_string( $hop_connector_backup_dir ) && preg_match( '/^[a-f0-9]{24}$/', $hop_connector_backup_dir ) ) {
 	require_once ABSPATH . 'wp-admin/includes/file.php';
 
+	$hop_connector_parents = array_unique( array_filter( array( (string) get_option( 'hop_connector_backup_parent', '' ), WP_CONTENT_DIR ) ) );
+
 	if ( 'direct' === get_filesystem_method() && WP_Filesystem() ) {
-		$wp_filesystem->delete( WP_CONTENT_DIR . '/hop-connector-backups-' . $hop_connector_backup_dir, true );
+		foreach ( $hop_connector_parents as $hop_connector_parent ) {
+			if ( is_dir( $hop_connector_parent . '/hop-connector-backups-' . $hop_connector_backup_dir ) ) {
+				$wp_filesystem->delete( $hop_connector_parent . '/hop-connector-backups-' . $hop_connector_backup_dir, true );
+			}
+		}
 	}
 }
 
@@ -27,6 +34,7 @@ delete_option( 'hop_connector_allowed_ips' );
 delete_option( 'hop_connector_update_lock' );
 delete_option( 'hop_connector_backups' );
 delete_option( 'hop_connector_backup_dir' );
+delete_option( 'hop_connector_backup_parent' );
 delete_option( 'hop_connector_last_fatal' );
 
 if ( file_exists( WPMU_PLUGIN_DIR . '/hop-connector-rescue.php' ) ) {

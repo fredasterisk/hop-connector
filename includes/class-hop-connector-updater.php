@@ -18,6 +18,11 @@ class Hop_Connector_Updater {
 	const KEEP_BACKUPS   = 5;
 
 	/**
+	 * Folder chosen to hold the backup directory.
+	 */
+	const OPTION_BACKUP_PARENT = 'hop_connector_backup_parent';
+
+	/**
 	 * Ask WordPress to check for updates now, through its standard mechanism.
 	 *
 	 * Premium plugins hook these checks to announce their own updates, which is
@@ -473,7 +478,7 @@ class Hop_Connector_Updater {
 			update_option( 'hop_connector_backup_dir', $suffix, false );
 		}
 
-		$root = WP_CONTENT_DIR . '/hop-connector-backups-' . $suffix;
+		$root = self::backup_parent( $suffix ) . '/hop-connector-backups-' . $suffix;
 
 		if ( ! wp_mkdir_p( $root ) ) {
 			return new WP_Error( 'hop_backup_failed', __( 'Impossible de créer le dossier de sauvegarde.', 'hop-connector' ), array( 'status' => 500 ) );
@@ -494,6 +499,113 @@ class Hop_Connector_Updater {
 		@chmod( $root, 0700 );
 
 		return $root;
+	}
+
+	/**
+	 * Folder holding the backup directory.
+	 *
+	 * The folder above WordPress when the site may write there and the web
+	 * server does not serve it: no address then leads to the copies. Otherwise
+	 * wp-content, where only the unguessable name and the permissions protect
+	 * them. Only a web request knows the public folder, so the choice is made
+	 * during one, then kept.
+	 *
+	 * @param  string $suffix  Unguessable part of the directory name.
+	 * @return string
+	 */
+	private static function backup_parent( $suffix ) {
+		$parent = get_option( self::OPTION_BACKUP_PARENT );
+
+		if ( is_string( $parent ) && '' !== $parent && is_dir( $parent ) ) {
+			return $parent;
+		}
+
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only resolved by realpath() and compared, never output.
+		$public = isset( $_SERVER['DOCUMENT_ROOT'] ) ? (string) wp_unslash( $_SERVER['DOCUMENT_ROOT'] ) : '';
+
+		if ( '' === $public ) {
+			return WP_CONTENT_DIR;
+		}
+
+		$parent = WP_CONTENT_DIR;
+		$above  = self::above_public_folder( $public );
+
+		if ( null !== $above && self::move_backups( WP_CONTENT_DIR, $above, $suffix ) ) {
+			$parent = $above;
+		}
+
+		update_option( self::OPTION_BACKUP_PARENT, $parent, false );
+
+		return $parent;
+	}
+
+	/**
+	 * The folder above WordPress, if the web server does not serve it and the
+	 * site may write there.
+	 *
+	 * @param  string $public  Public folder of the web server.
+	 * @return string|null
+	 */
+	private static function above_public_folder( $public ) {
+		// Hosts that restrict PHP to the site's folder (open_basedir) refuse to look higher.
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- See above.
+		$public = @realpath( $public );
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- See above.
+		$above = @realpath( dirname( ABSPATH ) );
+
+		if ( ! $public || ! $above ) {
+			return null;
+		}
+
+		$public = trailingslashit( wp_normalize_path( $public ) );
+		$above  = trailingslashit( wp_normalize_path( $above ) );
+
+		// Neither the public folder itself, nor anything inside it, nor the
+		// root of the disk.
+		if ( 0 === strpos( $above, $public ) || 1 === preg_match( '#^([A-Za-z]:)?/$#', $above ) ) {
+			return null;
+		}
+
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- See above.
+		return @wp_is_writable( $above ) ? untrailingslashit( $above ) : null;
+	}
+
+	/**
+	 * Move the backup directory, and the paths recorded for its copies.
+	 *
+	 * @param  string $from    Current parent folder.
+	 * @param  string $to      New parent folder.
+	 * @param  string $suffix  Unguessable part of the directory name.
+	 * @return bool Whether the copies are now under $to, or there were none.
+	 */
+	private static function move_backups( $from, $to, $suffix ) {
+		$source = wp_normalize_path( $from . '/hop-connector-backups-' . $suffix );
+		$target = wp_normalize_path( $to . '/hop-connector-backups-' . $suffix );
+
+		if ( ! is_dir( $source ) ) {
+			return true;
+		}
+
+		// On the same disk, one atomic rename. On another one, rename fails and
+		// the copies stay where they are, still listed.
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- See above.
+		if ( file_exists( $target ) || ! @rename( $source, $target ) ) {
+			return false;
+		}
+
+		$backups = self::backups();
+
+		foreach ( $backups as $id => $backup ) {
+			$path = wp_normalize_path( (string) $backup['path'] );
+
+			if ( 0 === strpos( $path, $source . '/' ) ) {
+				$backups[ $id ]['path'] = $target . substr( $path, strlen( $source ) );
+			}
+		}
+
+		update_option( self::OPTION_BACKUPS, $backups, false );
+
+		return true;
 	}
 
 	/**

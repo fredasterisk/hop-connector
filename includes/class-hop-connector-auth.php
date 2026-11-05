@@ -19,6 +19,13 @@ class Hop_Connector_Auth {
 	const NONCE_TTL = 300;
 
 	/**
+	 * Algorithm that authenticated the current request: ed25519 or hmac.
+	 *
+	 * @var string|null
+	 */
+	private static $algorithm = null;
+
+	/**
 	 * Permission callback for routes that need the active key.
 	 *
 	 * @param  WP_REST_Request $request  Request.
@@ -110,18 +117,13 @@ class Hop_Connector_Auth {
 			return self::deny( 'hop_bad_signature' );
 		}
 
-		$valid = Hop_Connector_Signature::verify(
-			$signature,
-			$key['secret'],
-			$method,
-			$route,
-			$timestamp,
-			$nonce,
-			$key_id,
-			$body
-		);
-
-		if ( ! $valid ) {
+		// A key holding the public key alone accepts Ed25519 only: no request
+		// can fall back to a secret the site no longer has.
+		if ( '' !== $key['public_key'] && Hop_Connector_Signature::verify_ed25519( $signature, $key['public_key'], $method, $route, $timestamp, $nonce, $key_id, $body ) ) {
+			$algorithm = 'ed25519';
+		} elseif ( '' !== $key['secret'] && Hop_Connector_Signature::verify( $signature, $key['secret'], $method, $route, $timestamp, $nonce, $key_id, $body ) ) {
+			$algorithm = 'hmac';
+		} else {
 			return self::deny( 'hop_bad_signature' );
 		}
 
@@ -129,7 +131,18 @@ class Hop_Connector_Auth {
 			return self::deny( 'hop_replay' );
 		}
 
+		self::$algorithm = $algorithm;
+
 		return true;
+	}
+
+	/**
+	 * Algorithm that authenticated the current request.
+	 *
+	 * @return string|null ed25519 or hmac; null before a request passed verify().
+	 */
+	public static function algorithm() {
+		return self::$algorithm;
 	}
 
 	/**
