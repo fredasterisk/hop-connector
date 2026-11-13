@@ -651,11 +651,12 @@ class Hop_Connector_Updater {
 	}
 
 	/**
-	 * One update at a time per site.
+	 * One update at a time per site. The nightly copy of the database takes
+	 * the same lock: it must not read tables an update is rewriting.
 	 *
 	 * @return bool
 	 */
-	private static function acquire_lock() {
+	public static function acquire_lock() {
 		if ( add_option( self::OPTION_LOCK, time() + self::LOCK_TTL, '', false ) ) {
 			return true;
 		}
@@ -668,6 +669,15 @@ class Hop_Connector_Updater {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Give the lock back.
+	 *
+	 * @return void
+	 */
+	public static function release_lock() {
+		delete_option( self::OPTION_LOCK );
 	}
 
 	/**

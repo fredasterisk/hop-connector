@@ -7,6 +7,9 @@
  * It lives next to the plugin backups, in the directory closed to the web,
  * under an unguessable name.
  *
+ * The same copy serves the platform's nightly backup of a site it cannot
+ * reach otherwise: written here, taken away in pieces, then deleted.
+ *
  * @package Hop_Connector
  */
 
@@ -28,6 +31,17 @@ class Hop_Connector_Database {
 	const MAX_AGE = 30 * DAY_IN_SECONDS;
 
 	/**
+	 * A copy made for the platform to take away is deleted once taken. One
+	 * left behind by a night that went wrong does not wait for the next.
+	 */
+	const PULLED_MAX_AGE = DAY_IN_SECONDS;
+
+	/**
+	 * Most bytes of a copy sent in one answer.
+	 */
+	const CHUNK = 8 * MB_IN_BYTES;
+
+	/**
 	 * The connector's own options: its key, nonces and login tokens never go
 	 * into a copy, and a restoration never brings back an older state of them.
 	 */
@@ -36,20 +50,53 @@ class Hop_Connector_Database {
 	/**
 	 * Export every table of this WordPress installation.
 	 *
+	 * A copy taken before updates (db) stays on the site, among the last few.
+	 * A copy the platform takes away each night (pull) is apart: it never
+	 * pushes out the copies that can undo an update, and there is one at most.
+	 *
+	 * @param  string $kind  db or pull.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public static function snapshot() {
-		global $wpdb;
-
-		$root = Hop_Connector_Updater::backup_root();
+	public static function snapshot( $kind = 'db' ) {
+		$pulled = 'pull' === $kind;
+		$root   = Hop_Connector_Updater::backup_root();
 
 		if ( is_wp_error( $root ) ) {
 			return $root;
 		}
 
+		if ( $pulled ) {
+			if ( ! Hop_Connector_Updater::acquire_lock() ) {
+				return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'hop-connector' ), array( 'status' => 409 ) );
+			}
+
+			foreach ( (array) glob( $root . '/pull-*.sql.gz' ) as $left_behind ) {
+				wp_delete_file( $left_behind );
+			}
+		}
+
+		try {
+			return self::write_snapshot( $root, $pulled );
+		} finally {
+			if ( $pulled ) {
+				Hop_Connector_Updater::release_lock();
+			}
+		}
+	}
+
+	/**
+	 * Write the copy.
+	 *
+	 * @param  string $root    Backup directory.
+	 * @param  bool   $pulled  Whether the platform takes the copy away.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function write_snapshot( $root, $pulled ) {
+		global $wpdb;
+
 		self::extend_time();
 
-		$snapshot_id = 'db-' . gmdate( 'YmdHis' ) . '-' . bin2hex( random_bytes( 8 ) );
+		$snapshot_id = ( $pulled ? 'pull-' : 'db-' ) . gmdate( 'YmdHis' ) . '-' . bin2hex( random_bytes( 8 ) );
 		$path        = $root . '/' . $snapshot_id . '.sql.gz';
 		$file        = gzopen( $path, 'wb6' );
 
@@ -86,14 +133,63 @@ class Hop_Connector_Database {
 
 		gzclose( $file );
 		self::protect( $path );
-		self::prune();
 
-		return array(
+		$result = array(
 			'backup_id' => $snapshot_id,
 			'tables'    => count( $tables ),
 			'rows'      => $rows,
 			'size'      => (int) filesize( $path ),
 		);
+
+		if ( $pulled ) {
+			$result['sha256'] = (string) hash_file( 'sha256', $path );
+		} else {
+			self::prune();
+		}
+
+		return $result;
+	}
+
+	/**
+	 * A piece of a copy the platform is taking away.
+	 *
+	 * @param  string $snapshot_id  Identifier returned by snapshot( 'pull' ).
+	 * @param  int    $offset       First byte.
+	 * @param  int    $length       Bytes wanted, CHUNK at most.
+	 * @return string|WP_Error
+	 */
+	public static function chunk( $snapshot_id, $offset, $length ) {
+		$path = self::path( $snapshot_id, 'pull' );
+
+		if ( null === $path ) {
+			return new WP_Error( 'hop_no_backup', __( 'Copie de la base introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+		}
+
+		$length = max( 1, min( (int) $length, self::CHUNK ) );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A piece of a local file.
+		$bytes = file_get_contents( $path, false, null, max( 0, (int) $offset ), $length );
+
+		if ( false === $bytes ) {
+			return new WP_Error( 'hop_backup_failed', __( 'Impossible de lire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
+		}
+
+		return $bytes;
+	}
+
+	/**
+	 * Delete a copy the platform has taken away.
+	 *
+	 * @param  string $snapshot_id  Identifier returned by snapshot( 'pull' ).
+	 * @return array<string,mixed>
+	 */
+	public static function discard( $snapshot_id ) {
+		$path = self::path( $snapshot_id, 'pull' );
+
+		if ( null !== $path ) {
+			wp_delete_file( $path );
+		}
+
+		return array( 'status' => 'discarded' );
 	}
 
 	/**
@@ -300,10 +396,11 @@ class Hop_Connector_Database {
 	 * Absolute path of a snapshot, or null when the identifier is unknown.
 	 *
 	 * @param  string $snapshot_id  Identifier.
+	 * @param  string $kind         db or pull: one is never read as the other.
 	 * @return string|null
 	 */
-	private static function path( $snapshot_id ) {
-		if ( 1 !== preg_match( '/^db-\d{14}-[a-f0-9]{16}$/', $snapshot_id ) ) {
+	private static function path( $snapshot_id, $kind = 'db' ) {
+		if ( 1 !== preg_match( '/^' . ( 'pull' === $kind ? 'pull' : 'db' ) . '-\d{14}-[a-f0-9]{16}$/', $snapshot_id ) ) {
 			return null;
 		}
 
@@ -346,6 +443,12 @@ class Hop_Connector_Database {
 		foreach ( self::snapshots() as $snapshot ) {
 			if ( $snapshot['created'] < time() - self::MAX_AGE ) {
 				wp_delete_file( $root . '/' . $snapshot['backup_id'] . '.sql.gz' );
+			}
+		}
+
+		foreach ( (array) glob( $root . '/pull-*.sql.gz' ) as $path ) {
+			if ( (int) filemtime( $path ) < time() - self::PULLED_MAX_AGE ) {
+				wp_delete_file( $path );
 			}
 		}
 	}

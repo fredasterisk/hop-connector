@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name:       Hop Connector
- * Description:       Connecte ce site à la plateforme de gestion Hop (inventaire, mises à jour, connexion en un clic) par des requêtes signées.
- * Version:           0.8.0
+ * Description:       Connecte ce site à la plateforme de gestion Hop (inventaire, mises à jour, sauvegardes, connexion en un clic) par des requêtes signées.
+ * Version:           0.9.0
  * Requires at least: 6.5
  * Requires PHP:      7.4
  * Author:            Fred Robert
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 if ( ! defined( 'HOP_CONNECTOR_VERSION' ) ) {
-	define( 'HOP_CONNECTOR_VERSION', '0.8.0' );
+	define( 'HOP_CONNECTOR_VERSION', '0.9.0' );
 }
 
 define( 'HOP_CONNECTOR_DIR', plugin_dir_path( __FILE__ ) );
@@ -33,6 +33,7 @@ require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-inventory.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-login.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-updater.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-database.php';
+require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-pull.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-rescue.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-rest.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-admin.php';

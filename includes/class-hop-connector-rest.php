@@ -1,7 +1,10 @@
 <?php
 /**
  * REST routes exposed to the platform. Explicit and minimal: there is no
- * generic execution, file or SQL endpoint.
+ * generic execution or SQL endpoint, and nothing writes a file it is given.
+ *
+ * The backups/pull routes let the platform read the site to back it up: a
+ * copy of the database and the files of the WordPress folder, nothing above.
  *
  * @package Hop_Connector
  */
@@ -198,6 +201,92 @@ class Hop_Connector_Rest {
 
 		register_rest_route(
 			self::REST_NAMESPACE,
+			'/backups/pull/database',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'pull_database' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/backups/pull/chunk',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'pull_chunk' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'backup_id' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'offset'    => array(
+						'type'     => 'integer',
+						'required' => true,
+						'minimum'  => 0,
+					),
+					'length'    => array(
+						'type'     => 'integer',
+						'required' => true,
+						'minimum'  => 1,
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/backups/pull/done',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'pull_done' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'backup_id' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+
+		// Paths are checked by the pull class: sanitizing one would read another file.
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/backups/pull/files',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'pull_files' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'after' => array(
+						'type'    => 'string',
+						'default' => '',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/backups/pull/fetch',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'pull_fetch' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'items' => array(
+						'required' => true,
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
 			'/rollback',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -278,6 +367,69 @@ class Hop_Connector_Rest {
 		$result = Hop_Connector_Database::restore( (string) $request->get_param( 'backup_id' ) );
 
 		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Copy the database for the platform to take away.
+	 *
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function pull_database() {
+		$result = Hop_Connector_Database::snapshot( 'pull' );
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Send a piece of that copy, as raw bytes.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_Error|void
+	 */
+	public static function pull_chunk( WP_REST_Request $request ) {
+		$bytes = Hop_Connector_Database::chunk(
+			(string) $request->get_param( 'backup_id' ),
+			(int) $request->get_param( 'offset' ),
+			(int) $request->get_param( 'length' )
+		);
+
+		if ( is_wp_error( $bytes ) ) {
+			return $bytes;
+		}
+
+		Hop_Connector_Pull::send( $bytes );
+	}
+
+	/**
+	 * Delete that copy, once the platform holds it.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_REST_Response
+	 */
+	public static function pull_done( WP_REST_Request $request ) {
+		return self::respond( Hop_Connector_Database::discard( (string) $request->get_param( 'backup_id' ) ) );
+	}
+
+	/**
+	 * List a page of the files of the WordPress folder.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function pull_files( WP_REST_Request $request ) {
+		$result = Hop_Connector_Pull::files( (string) $request->get_param( 'after' ) );
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Send the files asked for, as raw bytes.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_Error|void
+	 */
+	public static function pull_fetch( WP_REST_Request $request ) {
+		return Hop_Connector_Pull::fetch( $request->get_param( 'items' ) );
 	}
 
 	/**
