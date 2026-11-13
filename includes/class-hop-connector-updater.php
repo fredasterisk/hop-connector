@@ -654,30 +654,40 @@ class Hop_Connector_Updater {
 	 * One update at a time per site. The nightly copy of the database takes
 	 * the same lock: it must not read tables an update is rewriting.
 	 *
-	 * @return bool
+	 * @param  int $ttl  Seconds after which a lock left behind expires.
+	 * @return int|false When the lock expires, to give it back; false when it is taken.
 	 */
-	public static function acquire_lock() {
-		if ( add_option( self::OPTION_LOCK, time() + self::LOCK_TTL, '', false ) ) {
-			return true;
+	public static function acquire_lock( $ttl = self::LOCK_TTL ) {
+		$expires = time() + (int) $ttl;
+
+		if ( add_option( self::OPTION_LOCK, $expires, '', false ) ) {
+			return $expires;
 		}
 
 		// A lock left behind by a crashed request expires on its own.
 		if ( (int) get_option( self::OPTION_LOCK ) < time() ) {
-			update_option( self::OPTION_LOCK, time() + self::LOCK_TTL, false );
+			update_option( self::OPTION_LOCK, $expires, false );
 
-			return true;
+			return $expires;
 		}
 
 		return false;
 	}
 
 	/**
-	 * Give the lock back.
+	 * Give the lock back, if it is still the one taken: past its time, another
+	 * request may hold it by now, and its lock is not ours to delete.
 	 *
+	 * @param  int $held  What acquire_lock() returned.
 	 * @return void
 	 */
-	public static function release_lock() {
-		delete_option( self::OPTION_LOCK );
+	public static function release_lock( $held ) {
+		// The value read at the start of a long request is not the one in the database any more.
+		wp_cache_delete( self::OPTION_LOCK, 'options' );
+
+		if ( (int) get_option( self::OPTION_LOCK ) === (int) $held ) {
+			delete_option( self::OPTION_LOCK );
+		}
 	}
 
 	/**

@@ -37,6 +37,11 @@ class Hop_Connector_Database {
 	const PULLED_MAX_AGE = DAY_IN_SECONDS;
 
 	/**
+	 * Seconds a copy may take to write.
+	 */
+	const TIME_LIMIT = 900;
+
+	/**
 	 * Most bytes of a copy sent in one answer.
 	 */
 	const CHUNK = 8 * MB_IN_BYTES;
@@ -65,8 +70,13 @@ class Hop_Connector_Database {
 			return $root;
 		}
 
+		$held = false;
+
 		if ( $pulled ) {
-			if ( ! Hop_Connector_Updater::acquire_lock() ) {
+			// Held as long as the copy may take to write.
+			$held = Hop_Connector_Updater::acquire_lock( self::TIME_LIMIT );
+
+			if ( false === $held ) {
 				return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'hop-connector' ), array( 'status' => 409 ) );
 			}
 
@@ -78,8 +88,8 @@ class Hop_Connector_Database {
 		try {
 			return self::write_snapshot( $root, $pulled );
 		} finally {
-			if ( $pulled ) {
-				Hop_Connector_Updater::release_lock();
+			if ( false !== $held ) {
+				Hop_Connector_Updater::release_lock( $held );
 			}
 		}
 	}
@@ -518,7 +528,7 @@ class Hop_Connector_Database {
 	private static function extend_time() {
 		if ( function_exists( 'set_time_limit' ) ) {
 			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Squiz.PHP.DiscouragedFunctions.Discouraged -- Hosts may forbid it.
-			@set_time_limit( 900 );
+			@set_time_limit( self::TIME_LIMIT );
 		}
 	}
 }
