@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Connecteur Espace client
  * Description:       Relie ce site à l’espace client (inventaire, mises à jour, sauvegardes, connexion en un clic) par des requêtes signées.
- * Version:           0.12.0
+ * Version:           0.13.0
  * Requires at least: 6.5
  * Requires PHP:      7.4
  * Author:            Fred Robert
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 if ( ! defined( 'HOP_CONNECTOR_VERSION' ) ) {
-	define( 'HOP_CONNECTOR_VERSION', '0.12.0' );
+	define( 'HOP_CONNECTOR_VERSION', '0.13.0' );
 }
 
 define( 'HOP_CONNECTOR_DIR', plugin_dir_path( __FILE__ ) );
