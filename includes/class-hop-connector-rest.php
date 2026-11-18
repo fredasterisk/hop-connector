@@ -228,6 +228,40 @@ class Hop_Connector_Rest {
 
 		register_rest_route(
 			self::REST_NAMESPACE,
+			'/backups/database/restore/start',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'database_restore_start' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'backup_id' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/backups/database/restore/continue',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'database_restore_continue' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'restore_id' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
 			'/backups/pull/database',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -442,6 +476,30 @@ class Hop_Connector_Rest {
 	 */
 	public static function database_restore( WP_REST_Request $request ) {
 		$result = Hop_Connector_Database::restore( (string) $request->get_param( 'backup_id' ) );
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Begin putting the database back as it was in a snapshot, in steps.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function database_restore_start( WP_REST_Request $request ) {
+		$result = Hop_Connector_Database::start_restore( (string) $request->get_param( 'backup_id' ) );
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Run the next statements of that restoration.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function database_restore_continue( WP_REST_Request $request ) {
+		$result = Hop_Connector_Database::advance_restore( (string) $request->get_param( 'restore_id' ) );
 
 		return is_wp_error( $result ) ? $result : self::respond( $result );
 	}

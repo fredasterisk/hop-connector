@@ -329,79 +329,514 @@ class Hop_Connector_Database {
 	}
 
 	/**
-	 * Put the database back as it was in a snapshot.
+	 * Put the database back as it was in a snapshot, in one request, step
+	 * after step. For the platforms that do not ask in steps.
 	 *
 	 * @param  string $snapshot_id  Identifier returned by snapshot().
-	 * @return array<string,mixed>|WP_Error
+	 * @return array<string,mixed>|WP_Error  See advance_restore().
 	 */
 	public static function restore( $snapshot_id ) {
-		global $wpdb;
+		$result = self::start_restore( $snapshot_id );
 
-		$path = self::path( $snapshot_id );
+		while ( is_array( $result ) && 'running' === $result['status'] ) {
+			$result = self::advance_restore( $result['restore_id'] );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Begin putting the database back as it was in a snapshot, and do the
+	 * first step. The platform then calls advance_restore() until it is done.
+	 *
+	 * Each table of the copy is written under a temporary name, and all of
+	 * them take the place of the current ones at once, at the end. Until
+	 * then the site runs on its current tables, and so does the connector
+	 * answering the next steps: no request ever meets a half-restored site.
+	 * Tables tied by a foreign key are the exception: a renamed table would
+	 * leave the key pointing at the wrong one, so they are replaced in place,
+	 * each one within a single step.
+	 *
+	 * @param  string $snapshot_id  Identifier returned by snapshot().
+	 * @return array<string,mixed>|WP_Error  See advance_restore().
+	 */
+	public static function start_restore( $snapshot_id ) {
+		$path = self::path( (string) $snapshot_id );
 
 		if ( null === $path ) {
 			return new WP_Error( 'hop_no_backup', __( 'Copie de la base introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
 		}
 
+		$root = Hop_Connector_Updater::backup_root();
+		$held = Hop_Connector_Updater::acquire_lock( self::LOCK_SECONDS );
+
+		if ( false === $held ) {
+			return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'hop-connector' ), array( 'status' => 409 ) );
+		}
+
 		self::extend_time();
 
-		$file = gzopen( $path, 'rb' );
+		$restore_id = 'restore-' . gmdate( 'YmdHis' ) . '-' . bin2hex( random_bytes( 8 ) );
+		$sql        = $root . '/' . $restore_id . '.sql';
 
-		if ( ! $file ) {
+		// Unpacked once: a plain file can be read from any point, a gzip one
+		// only from its start.
+		if ( ! self::inflate( $path, $sql ) ) {
+			wp_delete_file( $sql );
+			self::give_back( $held );
+
 			return new WP_Error( 'hop_restore_failed', __( 'Impossible de lire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
 		}
 
-		$statements = 0;
-		$own        = self::own_options();
+		self::protect( $sql );
 
+		$job = array(
+			'backup_id'  => (string) $snapshot_id,
+			'offset'     => 0,
+			'statements' => 0,
+			'in_place'   => self::tables_with_foreign_keys(),
+			'swaps'      => array(),
+			'held'       => $held,
+		);
+
+		if ( ! self::write_json( self::restore_job_path( $root, $restore_id ), $job ) ) {
+			wp_delete_file( $sql );
+			self::give_back( $held );
+
+			return new WP_Error( 'hop_restore_failed', __( 'Impossible d\'écrire la restauration en cours.', 'hop-connector' ), array( 'status' => 500 ) );
+		}
+
+		return self::advance_restore( $restore_id );
+	}
+
+	/**
+	 * Run the next statements of a restoration begun by start_restore(), for
+	 * STEP_SECONDS or so.
+	 *
+	 * @param  string $restore_id  Identifier returned by start_restore().
+	 * @return array<string,mixed>|WP_Error  status running (restore_id, backup_id,
+	 *                                       statements, done, size) or restored
+	 *                                       (backup_id, statements).
+	 */
+	public static function advance_restore( $restore_id ) {
+		global $wpdb;
+
+		$root = Hop_Connector_Updater::backup_root();
+		$job  = ! is_wp_error( $root ) && 1 === preg_match( '/^restore-\d{14}-[a-f0-9]{16}$/', (string) $restore_id ) ? self::load_restore( $root, $restore_id ) : null;
+
+		if ( null === $job ) {
+			return new WP_Error( 'hop_no_backup', __( 'Restauration introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+		}
+
+		self::extend_time();
+
+		$sql      = $root . '/' . $restore_id . '.sql';
+		$deadline = microtime( true ) + self::STEP_SECONDS;
+		$done     = false;
 		// A statement that fails must stop the restoration, not be skipped silently.
 		$previous = $wpdb->suppress_errors( true );
 
-		while ( ! gzeof( $file ) ) {
-			$line = gzgets( $file );
+		try {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Read from a byte offset.
+			$handle = fopen( $sql, 'rb' );
+
+			if ( false === $handle || 0 !== fseek( $handle, $job['offset'] ) ) {
+				throw new RuntimeException( __( 'copie illisible', 'hop-connector' ) );
+			}
+
+			try {
+				// Each step is its own connection to the database.
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+				$wpdb->query( 'SET NAMES utf8mb4' );
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+				$wpdb->query( 'SET FOREIGN_KEY_CHECKS=0' );
+
+				$first = true;
+
+				while ( $first || microtime( true ) < $deadline ) {
+					$first = false;
+					$line  = self::next_line( $handle );
+
+					if ( null === $line ) {
+						$done = true;
+						break;
+					}
+
+					if ( 0 === strpos( $line, 'DROP TABLE IF EXISTS `' ) ) {
+						// A table is never left dropped from one step to the next.
+						$create = self::next_line( $handle );
+
+						if ( null === $create || 0 !== strpos( $create, 'CREATE TABLE `' ) ) {
+							throw new RuntimeException( __( 'copie illisible', 'hop-connector' ) );
+						}
+
+						$statements = self::table_statements( $line, $create, $job );
+					} else {
+						$statements = array( self::renamed( $line, $job['swaps'] ) );
+					}
+
+					foreach ( $statements as $statement ) {
+						// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared -- Statements written by snapshot().
+						if ( false === $wpdb->query( $statement ) ) {
+							throw new RuntimeException( $wpdb->last_error );
+						}
+
+						++$job['statements'];
+					}
+
+					$job['offset'] = (int) ftell( $handle );
+				}
+			} finally {
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Handle opened above.
+				fclose( $handle );
+			}
+
+			if ( $done ) {
+				self::swap_in( $job['swaps'] );
+			}
+		} catch ( Throwable $exception ) {
+			self::abandon_restore( $root, $restore_id, $job );
+			$wpdb->suppress_errors( $previous );
+
+			return new WP_Error(
+				'hop_restore_failed',
+				__( 'La restauration de la base s\'est arrêtée en cours de route : ', 'hop-connector' ) . $exception->getMessage(),
+				array(
+					'status'     => 500,
+					'statements' => $job['statements'],
+				)
+			);
+		}
+
+		$wpdb->suppress_errors( $previous );
+
+		if ( $done ) {
+			wp_delete_file( $sql );
+			wp_delete_file( self::restore_job_path( $root, $restore_id ) );
+			self::give_back( $job['held'] );
+			wp_cache_flush();
+
+			return array(
+				'status'     => 'restored',
+				'backup_id'  => $job['backup_id'],
+				'statements' => $job['statements'],
+			);
+		}
+
+		$job['held'] = false === $job['held'] ? false : Hop_Connector_Updater::renew_lock( $job['held'], self::LOCK_SECONDS );
+
+		if ( ! self::write_json( self::restore_job_path( $root, $restore_id ), $job ) ) {
+			self::abandon_restore( $root, $restore_id, $job );
+
+			return new WP_Error( 'hop_restore_failed', __( 'Impossible d\'écrire la restauration en cours.', 'hop-connector' ), array( 'status' => 500 ) );
+		}
+
+		return array(
+			'status'     => 'running',
+			'restore_id' => $restore_id,
+			'backup_id'  => $job['backup_id'],
+			'statements' => $job['statements'],
+			'done'       => $job['offset'],
+			'size'       => (int) filesize( $sql ),
+		);
+	}
+
+	/**
+	 * The statements that recreate one table: under a temporary name, or in
+	 * place for a table tied by a foreign key.
+	 *
+	 * @param  string                                                $drop    DROP TABLE line of the copy.
+	 * @param  string                                                $create  CREATE TABLE line that follows it.
+	 * @param  array{in_place: list<string>, swaps: array<string,int>} $job   Restoration; gains the table's swap.
+	 * @return list<string>
+	 * @throws RuntimeException When the table name is unusual.
+	 */
+	private static function table_statements( $drop, $create, array &$job ) {
+		$table = self::table_of( $create );
+
+		if ( null === $table || self::table_of( $drop ) !== $table ) {
+			throw new RuntimeException( __( 'copie illisible', 'hop-connector' ) );
+		}
+
+		if ( in_array( $table, $job['in_place'], true ) || false !== stripos( $create, 'FOREIGN KEY' ) ) {
+			return array( $drop, $create );
+		}
+
+		$job['swaps'][ $table ] = count( $job['swaps'] );
+		$temporary              = self::temporary_name( $job['swaps'][ $table ], 'r' );
+
+		return array(
+			"DROP TABLE IF EXISTS `{$temporary}`",
+			'CREATE TABLE `' . $temporary . '`' . substr( $create, strlen( 'CREATE TABLE `' . $table . '`' ) ),
+		);
+	}
+
+	/**
+	 * A statement of the copy, aimed at the temporary table when its table has one.
+	 *
+	 * @param  string             $statement  Line of the copy.
+	 * @param  array<string, int> $swaps      Table => number of its temporary table.
+	 * @return string
+	 */
+	private static function renamed( $statement, array $swaps ) {
+		if ( 0 !== strpos( $statement, 'INSERT INTO `' ) ) {
+			return $statement;
+		}
+
+		$table = self::table_of( $statement );
+
+		if ( null === $table || ! isset( $swaps[ $table ] ) ) {
+			return $statement;
+		}
+
+		return 'INSERT INTO `' . self::temporary_name( $swaps[ $table ], 'r' ) . '`' . substr( $statement, strlen( 'INSERT INTO `' . $table . '`' ) );
+	}
+
+	/**
+	 * Put every restored table in place of the current one, in one statement:
+	 * the site goes from the old state to the restored one at once.
+	 *
+	 * The connector's own options are read just before and written back just
+	 * after: a key revoked since the copy stays revoked, the nonces already
+	 * used stay used.
+	 *
+	 * @param  array<string, int> $swaps  Table => number of its temporary table.
+	 * @return void
+	 * @throws RuntimeException When MySQL refuses the swap: the current tables are then untouched.
+	 */
+	private static function swap_in( array $swaps ) {
+		global $wpdb;
+
+		$own     = self::own_options();
+		$renames = array();
+		$old     = array();
+
+		foreach ( $swaps as $table => $number ) {
+			if ( self::table_exists( $table ) ) {
+				$old[] = self::temporary_name( $number, 'o' );
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Name built from a number.
+				$wpdb->query( 'DROP TABLE IF EXISTS `' . end( $old ) . '`' );
+				$renames[] = "`{$table}` TO `" . end( $old ) . '`';
+			}
+
+			$renames[] = '`' . self::temporary_name( $number, 'r' ) . "` TO `{$table}`";
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.NotPrepared -- Names from the copy, checked by table_of().
+		if ( array() !== $renames && false === $wpdb->query( 'RENAME TABLE ' . implode( ', ', $renames ) ) ) {
+			throw new RuntimeException( $wpdb->last_error );
+		}
+
+		foreach ( $old as $name ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Name built from a number.
+			$wpdb->query( "DROP TABLE IF EXISTS `{$name}`" );
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$wpdb->query( 'SET FOREIGN_KEY_CHECKS=1' );
+		self::put_back_own_options( $own );
+	}
+
+	/**
+	 * Drop a restoration that failed: its temporary tables, its files and its lock.
+	 * Tables already replaced in place stay as they are now.
+	 *
+	 * @param  string                                       $root        Backup directory.
+	 * @param  string                                       $restore_id  Identifier.
+	 * @param  array{swaps: array<string,int>, held: int|false} $job     Restoration.
+	 * @return void
+	 */
+	private static function abandon_restore( $root, $restore_id, array $job ) {
+		global $wpdb;
+
+		foreach ( $job['swaps'] as $number ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Name built from a number.
+			$wpdb->query( 'DROP TABLE IF EXISTS `' . self::temporary_name( $number, 'r' ) . '`' );
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$wpdb->query( 'SET FOREIGN_KEY_CHECKS=1' );
+		wp_delete_file( $root . '/' . $restore_id . '.sql' );
+		wp_delete_file( self::restore_job_path( $root, $restore_id ) );
+		self::give_back( $job['held'] );
+		wp_cache_flush();
+	}
+
+	/**
+	 * Name of a temporary table: r for a restored table waiting for the swap,
+	 * o for a current one about to be dropped. It carries the prefix of the
+	 * installation, so two installations sharing a database never meet.
+	 *
+	 * @param  int    $number  Number of the table in the restoration.
+	 * @param  string $kind    r or o.
+	 * @return string
+	 */
+	private static function temporary_name( $number, $kind ) {
+		global $wpdb;
+
+		return $wpdb->base_prefix . 'hop_' . $kind . (int) $number;
+	}
+
+	/**
+	 * Name of the table a line of the copy is about, or null.
+	 *
+	 * @param  string $line  Line of the copy.
+	 * @return string|null
+	 */
+	private static function table_of( $line ) {
+		return 1 === preg_match( '/^(?:DROP TABLE IF EXISTS|CREATE TABLE|INSERT INTO) `([A-Za-z0-9_$]+)`/', $line, $matches ) ? $matches[1] : null;
+	}
+
+	/**
+	 * Whether a table exists now.
+	 *
+	 * @param  string $table  Table name.
+	 * @return bool
+	 */
+	private static function table_exists( $table ) {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		return $table === $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) );
+	}
+
+	/**
+	 * Tables of this installation that hold a foreign key or are the target
+	 * of one. A host without information_schema has none to report.
+	 *
+	 * @return list<string>
+	 */
+	private static function tables_with_foreign_keys() {
+		global $wpdb;
+
+		$prefix   = $wpdb->esc_like( is_multisite() ? $wpdb->base_prefix : $wpdb->prefix ) . '%';
+		$previous = $wpdb->suppress_errors( true );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT TABLE_NAME, REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL AND (TABLE_NAME LIKE %s OR REFERENCED_TABLE_NAME LIKE %s)',
+				$prefix,
+				$prefix
+			),
+			ARRAY_N
+		);
+
+		$wpdb->suppress_errors( $previous );
+		$tables = array();
+
+		foreach ( (array) $rows as $row ) {
+			$tables[] = (string) $row[0];
+			$tables[] = (string) $row[1];
+		}
+
+		return array_values( array_unique( $tables ) );
+	}
+
+	/**
+	 * The next line of a plain copy that holds a statement, or null at its end.
+	 *
+	 * @param  resource $handle  Open file.
+	 * @return string|null
+	 */
+	private static function next_line( $handle ) {
+		while ( ! feof( $handle ) ) {
+			$line = fgets( $handle );
 
 			if ( false === $line ) {
-				break;
+				return null;
 			}
 
 			$line = rtrim( $line, "\r\n" );
 
-			if ( '' === $line ) {
-				continue;
+			if ( '' !== $line ) {
+				return $line;
 			}
-
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared -- Statements written by snapshot().
-			if ( false === $wpdb->query( $line ) ) {
-				$error = $wpdb->last_error;
-				gzclose( $file );
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Leave the session as found.
-				$wpdb->query( 'SET FOREIGN_KEY_CHECKS=1' );
-				self::put_back_own_options( $own );
-				$wpdb->suppress_errors( $previous );
-				wp_cache_flush();
-
-				return new WP_Error(
-					'hop_restore_failed',
-					__( 'La restauration de la base s\'est arrêtée en cours de route : ', 'hop-connector' ) . $error,
-					array(
-						'status'     => 500,
-						'statements' => $statements,
-					)
-				);
-			}
-
-			++$statements;
 		}
 
-		gzclose( $file );
-		self::put_back_own_options( $own );
-		$wpdb->suppress_errors( $previous );
-		wp_cache_flush();
+		return null;
+	}
+
+	/**
+	 * Unpack a copy into a plain file.
+	 *
+	 * @param  string $from  Gzipped copy.
+	 * @param  string $to    Plain file to write.
+	 * @return bool
+	 */
+	private static function inflate( $from, $to ) {
+		$in = gzopen( $from, 'rb' );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Streamed, too large to hold in memory.
+		$out = fopen( $to, 'wb' );
+
+		if ( ! $in || false === $out ) {
+			return false;
+		}
+
+		$written = true;
+
+		while ( $written && ! gzeof( $in ) ) {
+			$bytes = gzread( $in, 1048576 );
+
+			if ( false === $bytes ) {
+				$written = false;
+				break;
+			}
+
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Streamed, see above.
+			$written = false !== fwrite( $out, $bytes );
+		}
+
+		gzclose( $in );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Handle opened above.
+		fclose( $out );
+
+		return $written;
+	}
+
+	/**
+	 * Path of the progress of a restoration.
+	 *
+	 * @param  string $root        Backup directory.
+	 * @param  string $restore_id  Identifier.
+	 * @return string
+	 */
+	private static function restore_job_path( $root, $restore_id ) {
+		return $root . '/' . $restore_id . '.restore.json';
+	}
+
+	/**
+	 * The progress of a restoration, or null when there is none.
+	 *
+	 * @param  string $root        Backup directory.
+	 * @param  string $restore_id  Identifier.
+	 * @param  bool   $need_sql    Whether the plain copy must still be there: not to clean up.
+	 * @return array{backup_id: string, offset: int, statements: int, in_place: list<string>, swaps: array<string,int>, held: int|false}|null
+	 */
+	private static function load_restore( $root, $restore_id, $need_sql = true ) {
+		$job = self::read_json( self::restore_job_path( $root, $restore_id ) );
+
+		if ( null === $job || ( $need_sql && ! is_file( $root . '/' . $restore_id . '.sql' ) ) || ! isset( $job['backup_id'], $job['offset'], $job['statements'] ) ) {
+			return null;
+		}
+
+		$in_place = array_values( array_filter( array_map( 'strval', (array) ( $job['in_place'] ?? array() ) ), array( __CLASS__, 'is_safe_name' ) ) );
+		$swaps    = array();
+
+		foreach ( (array) ( $job['swaps'] ?? array() ) as $table => $number ) {
+			// Table names go between backticks: the file is checked as if it came from outside.
+			if ( self::is_safe_name( (string) $table ) ) {
+				$swaps[ (string) $table ] = (int) $number;
+			}
+		}
 
 		return array(
-			'status'     => 'restored',
-			'backup_id'  => $snapshot_id,
-			'statements' => $statements,
+			'backup_id'  => (string) $job['backup_id'],
+			'offset'     => max( 0, (int) $job['offset'] ),
+			'statements' => max( 0, (int) $job['statements'] ),
+			'in_place'   => $in_place,
+			'swaps'      => $swaps,
+			'held'       => isset( $job['held'] ) && false !== $job['held'] ? (int) $job['held'] : false,
 		);
 	}
 
@@ -531,7 +966,19 @@ class Hop_Connector_Database {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$tables = $wpdb->get_col( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $prefix ) . '%' ) );
 
-		return array_values( array_filter( array_map( 'strval', (array) $tables ), array( __CLASS__, 'is_safe_name' ) ) );
+		$tables = array_filter( array_map( 'strval', (array) $tables ), array( __CLASS__, 'is_safe_name' ) );
+
+		// Nor the temporary tables of a restoration under way.
+		$temporary = '/^' . preg_quote( $wpdb->base_prefix, '/' ) . 'hop_[ro]\d+$/';
+
+		return array_values(
+			array_filter(
+				$tables,
+				function ( $table ) use ( $temporary ) {
+					return 1 !== preg_match( $temporary, $table );
+				}
+			)
+		);
 	}
 
 	/**
@@ -607,16 +1054,42 @@ class Hop_Connector_Database {
 	 * @return bool
 	 */
 	private static function save_job( $root, $snapshot_id, array $job ) {
-		$path = self::job_path( $root, $snapshot_id );
+		return self::write_json( self::job_path( $root, $snapshot_id ), $job );
+	}
 
+	/**
+	 * Write a small progress file, readable by the site's user only.
+	 *
+	 * @param  string               $path  File.
+	 * @param  array<string, mixed> $data  Content.
+	 * @return bool
+	 */
+	private static function write_json( $path, array $data ) {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A small local file, closed to the web.
-		if ( false === file_put_contents( $path, (string) wp_json_encode( $job ) ) ) {
+		if ( false === file_put_contents( $path, (string) wp_json_encode( $data ) ) ) {
 			return false;
 		}
 
 		self::protect( $path );
 
 		return true;
+	}
+
+	/**
+	 * Read a progress file written by write_json().
+	 *
+	 * @param  string $path  File.
+	 * @return array<string, mixed>|null
+	 */
+	private static function read_json( $path ) {
+		if ( ! is_file( $path ) ) {
+			return null;
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A small local file.
+		$data = json_decode( (string) file_get_contents( $path ), true );
+
+		return is_array( $data ) ? $data : null;
 	}
 
 	/**
@@ -627,16 +1100,9 @@ class Hop_Connector_Database {
 	 * @return array{tables: list<string>, table: int, offset: int, rows: int, bytes: int, held: int|false}|null
 	 */
 	private static function load_job( $root, $snapshot_id ) {
-		$path = self::job_path( $root, $snapshot_id );
+		$job = is_file( self::part_path( $root, $snapshot_id ) ) ? self::read_json( self::job_path( $root, $snapshot_id ) ) : null;
 
-		if ( ! is_file( $path ) || ! is_file( self::part_path( $root, $snapshot_id ) ) ) {
-			return null;
-		}
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A small local file.
-		$job = json_decode( (string) file_get_contents( $path ), true );
-
-		if ( ! is_array( $job ) || ! isset( $job['tables'], $job['table'], $job['offset'], $job['rows'], $job['bytes'] ) || ! is_array( $job['tables'] ) ) {
+		if ( null === $job || ! isset( $job['tables'], $job['table'], $job['offset'], $job['rows'], $job['bytes'] ) || ! is_array( $job['tables'] ) ) {
 			return null;
 		}
 
@@ -748,11 +1214,26 @@ class Hop_Connector_Database {
 			}
 		}
 
-		// Copies taken away, and copies the platform stopped writing halfway.
+		// Restorations the platform stopped asking for: their temporary tables go too.
+		foreach ( (array) glob( $root . '/restore-*.restore.json' ) as $path ) {
+			$restore_id = basename( $path, '.restore.json' );
+			$job        = self::load_restore( $root, $restore_id, false );
+
+			if ( (int) filemtime( $path ) < time() - self::PULLED_MAX_AGE ) {
+				if ( null === $job ) {
+					wp_delete_file( $path );
+				} else {
+					self::abandon_restore( $root, $restore_id, $job );
+				}
+			}
+		}
+
+		// Copies taken away, and copies or restorations the platform stopped halfway.
 		$left_behind = array_merge(
 			(array) glob( $root . '/pull-*.sql.gz' ),
 			(array) glob( $root . '/*.sql.gz.part' ),
-			(array) glob( $root . '/*.job.json' )
+			(array) glob( $root . '/*.job.json' ),
+			(array) glob( $root . '/restore-*.sql' )
 		);
 
 		foreach ( $left_behind as $path ) {
