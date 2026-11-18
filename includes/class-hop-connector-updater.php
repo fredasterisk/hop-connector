@@ -691,6 +691,26 @@ class Hop_Connector_Updater {
 	}
 
 	/**
+	 * Keep the lock for another while, if it is still the one taken.
+	 *
+	 * @param  int $held  What acquire_lock() or an earlier renew_lock() returned.
+	 * @param  int $ttl   Seconds from now.
+	 * @return int|false The new value to give back, or false when the lock is not ours any more.
+	 */
+	public static function renew_lock( $held, $ttl = self::LOCK_TTL ) {
+		wp_cache_delete( self::OPTION_LOCK, 'options' );
+
+		if ( (int) get_option( self::OPTION_LOCK ) !== (int) $held ) {
+			return false;
+		}
+
+		$expires = time() + (int) $ttl;
+		update_option( self::OPTION_LOCK, $expires, false );
+
+		return $expires;
+	}
+
+	/**
 	 * Direct filesystem access, without asking for FTP credentials.
 	 *
 	 * @return WP_Filesystem_Base|null

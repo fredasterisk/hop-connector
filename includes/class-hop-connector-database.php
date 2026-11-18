@@ -37,9 +37,24 @@ class Hop_Connector_Database {
 	const PULLED_MAX_AGE = DAY_IN_SECONDS;
 
 	/**
-	 * Seconds a copy may take to write.
+	 * Seconds of work in one request. Nginx, Cloudflare and most proxies give
+	 * up on PHP after 60 to 100 seconds: a copy of any size is written over as
+	 * many requests as it needs, never in one that is cut halfway.
 	 */
-	const TIME_LIMIT = 900;
+	const STEP_SECONDS = 20;
+
+	/**
+	 * Seconds a step may take: past STEP_SECONDS, the last batch of rows
+	 * still has to finish.
+	 */
+	const TIME_LIMIT = 300;
+
+	/**
+	 * Seconds a nightly copy keeps the update lock after each step. The
+	 * platform asks for the next step at once; one that stopped asking
+	 * frees the lock on its own.
+	 */
+	const LOCK_SECONDS = 10 * MINUTE_IN_SECONDS;
 
 	/**
 	 * Most bytes of a copy sent in one answer.
@@ -53,16 +68,37 @@ class Hop_Connector_Database {
 	const OWN_OPTIONS = 'hop_connector_';
 
 	/**
-	 * Export every table of this WordPress installation.
+	 * Export every table of this WordPress installation in one request, step
+	 * after step. For the platforms that do not ask in steps.
+	 *
+	 * @param  string $kind  db or pull.
+	 * @return array<string,mixed>|WP_Error  See advance().
+	 */
+	public static function snapshot( $kind = 'db' ) {
+		$result = self::start( $kind );
+
+		while ( is_array( $result ) && 'running' === $result['status'] ) {
+			$result = self::advance( $result['backup_id'], $kind );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Begin a copy of every table of this WordPress installation and write its
+	 * first part. The platform then calls advance() until the copy is done.
 	 *
 	 * A copy taken before updates (db) stays on the site, among the last few.
 	 * A copy the platform takes away each night (pull) is apart: it never
 	 * pushes out the copies that can undo an update, and there is one at most.
 	 *
+	 * Until it is done, a copy is a .part file next to its progress (.job.json),
+	 * and no other method reads it as a copy.
+	 *
 	 * @param  string $kind  db or pull.
-	 * @return array<string,mixed>|WP_Error
+	 * @return array<string,mixed>|WP_Error  See advance().
 	 */
-	public static function snapshot( $kind = 'db' ) {
+	public static function start( $kind = 'db' ) {
 		$pulled = 'pull' === $kind;
 		$root   = Hop_Connector_Updater::backup_root();
 
@@ -73,85 +109,175 @@ class Hop_Connector_Database {
 		$held = false;
 
 		if ( $pulled ) {
-			// Held as long as the copy may take to write.
-			$held = Hop_Connector_Updater::acquire_lock( self::TIME_LIMIT );
+			// Renewed at each step, for as long as the copy takes.
+			$held = Hop_Connector_Updater::acquire_lock( self::LOCK_SECONDS );
 
 			if ( false === $held ) {
 				return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'hop-connector' ), array( 'status' => 409 ) );
 			}
 
-			foreach ( (array) glob( $root . '/pull-*.sql.gz' ) as $left_behind ) {
+			// A copy, a part or a progress file left behind by an earlier night.
+			foreach ( (array) glob( $root . '/pull-*' ) as $left_behind ) {
 				wp_delete_file( $left_behind );
 			}
 		}
 
-		try {
-			return self::write_snapshot( $root, $pulled );
-		} finally {
-			if ( false !== $held ) {
-				Hop_Connector_Updater::release_lock( $held );
-			}
-		}
-	}
-
-	/**
-	 * Write the copy.
-	 *
-	 * @param  string $root    Backup directory.
-	 * @param  bool   $pulled  Whether the platform takes the copy away.
-	 * @return array<string,mixed>|WP_Error
-	 */
-	private static function write_snapshot( $root, $pulled ) {
-		global $wpdb;
-
-		self::extend_time();
-
 		$snapshot_id = ( $pulled ? 'pull-' : 'db-' ) . gmdate( 'YmdHis' ) . '-' . bin2hex( random_bytes( 8 ) );
-		$path        = $root . '/' . $snapshot_id . '.sql.gz';
-		$file        = gzopen( $path, 'wb6' );
+		$part        = self::part_path( $root, $snapshot_id );
+		$file        = gzopen( $part, 'wb6' );
 
 		if ( ! $file ) {
+			self::give_back( $held );
+
 			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
 		}
 
-		$tables = self::tables();
-		$rows   = 0;
+		gzwrite( $file, "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n" );
+		gzclose( $file );
+		self::protect( $part );
+		clearstatcache( true, $part );
+
+		$job = array(
+			'tables' => self::tables(),
+			'table'  => 0,
+			'offset' => 0,
+			'rows'   => 0,
+			'bytes'  => (int) filesize( $part ),
+			'held'   => $held,
+		);
+
+		if ( ! self::save_job( $root, $snapshot_id, $job ) ) {
+			self::abandon( $root, $snapshot_id, $held );
+
+			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
+		}
+
+		return self::advance( $snapshot_id, $kind );
+	}
+
+	/**
+	 * Write the next part of a copy begun by start(), for STEP_SECONDS or so.
+	 *
+	 * @param  string $snapshot_id  Identifier returned by start().
+	 * @param  string $kind         db or pull: one is never continued as the other.
+	 * @return array<string,mixed>|WP_Error  status running (backup_id, tables,
+	 *                                       tables_done, rows) or done (backup_id,
+	 *                                       tables, rows, size, and sha256 for a pull).
+	 */
+	public static function advance( $snapshot_id, $kind = 'db' ) {
+		$root = Hop_Connector_Updater::backup_root();
+		$job  = ! is_wp_error( $root ) && self::is_id( (string) $snapshot_id, $kind ) ? self::load_job( $root, $snapshot_id ) : null;
+
+		if ( null === $job ) {
+			return new WP_Error( 'hop_no_backup', __( 'Copie de la base introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+		}
+
+		self::extend_time();
+
+		$part     = self::part_path( $root, $snapshot_id );
+		$deadline = microtime( true ) + self::STEP_SECONDS;
+		$count    = count( $job['tables'] );
 
 		try {
-			gzwrite( $file, "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n" );
+			// A step stopped halfway (PHP cut short, server restarted) leaves
+			// a broken end: it goes, and its rows are written again.
+			self::truncate( $part, $job['bytes'] );
 
-			foreach ( $tables as $table ) {
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names come from SHOW TABLES.
-				$create = $wpdb->get_row( "SHOW CREATE TABLE `{$table}`", ARRAY_N );
+			$file = gzopen( $part, 'ab6' );
 
-				if ( ! is_array( $create ) || ! isset( $create[1] ) ) {
-					throw new RuntimeException( sprintf( 'SHOW CREATE TABLE %s', $table ) );
-				}
-
-				gzwrite( $file, "DROP TABLE IF EXISTS `{$table}`;\n" . str_replace( array( "\r", "\n" ), ' ', $create[1] ) . ";\n" );
-
-				$rows += self::export_rows( $file, $table );
+			if ( ! $file ) {
+				throw new RuntimeException( __( 'fichier illisible', 'hop-connector' ) );
 			}
 
-			gzwrite( $file, "SET FOREIGN_KEY_CHECKS=1;\n" );
+			try {
+				// At least one batch per step, so every step moves the copy forward.
+				$first = true;
+
+				while ( $job['table'] < $count && ( $first || microtime( true ) < $deadline ) ) {
+					$first = false;
+					$table = $job['tables'][ $job['table'] ];
+
+					if ( 0 === $job['offset'] ) {
+						self::write_structure( $file, $table );
+					}
+
+					$exported     = self::export_batch( $file, $table, $job['offset'] );
+					$job['rows'] += $exported;
+
+					if ( $exported < self::ROWS_PER_GO ) {
+						++$job['table'];
+						$job['offset'] = 0;
+					} else {
+						$job['offset'] += self::ROWS_PER_GO;
+					}
+				}
+
+				if ( $job['table'] >= $count ) {
+					gzwrite( $file, "SET FOREIGN_KEY_CHECKS=1;\n" );
+				}
+			} finally {
+				gzclose( $file );
+			}
 		} catch ( Throwable $exception ) {
-			gzclose( $file );
-			wp_delete_file( $path );
+			self::abandon( $root, $snapshot_id, $job['held'] );
 
 			return new WP_Error( 'hop_backup_failed', __( 'La copie de la base a échoué : ', 'hop-connector' ) . $exception->getMessage(), array( 'status' => 500 ) );
 		}
 
-		gzclose( $file );
-		self::protect( $path );
+		if ( $job['table'] >= $count ) {
+			return self::finish( $root, $snapshot_id, $job );
+		}
+
+		clearstatcache( true, $part );
+		$job['bytes'] = (int) filesize( $part );
+		$job['held']  = false === $job['held'] ? false : Hop_Connector_Updater::renew_lock( $job['held'], self::LOCK_SECONDS );
+
+		if ( ! self::save_job( $root, $snapshot_id, $job ) ) {
+			self::abandon( $root, $snapshot_id, $job['held'] );
+
+			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
+		}
+
+		return array(
+			'status'      => 'running',
+			'backup_id'   => $snapshot_id,
+			'tables'      => $count,
+			'tables_done' => $job['table'],
+			'rows'        => $job['rows'],
+		);
+	}
+
+	/**
+	 * Turn a finished part into a copy.
+	 *
+	 * @param  string                                   $root         Backup directory.
+	 * @param  string                                   $snapshot_id  Identifier.
+	 * @param  array{tables: list<string>, rows: int, held: int|false} $job  Progress.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function finish( $root, $snapshot_id, array $job ) {
+		$path = $root . '/' . $snapshot_id . '.sql.gz';
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Within one local directory.
+		if ( ! rename( self::part_path( $root, $snapshot_id ), $path ) ) {
+			self::abandon( $root, $snapshot_id, $job['held'] );
+
+			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
+		}
+
+		wp_delete_file( self::job_path( $root, $snapshot_id ) );
+		self::give_back( $job['held'] );
+		clearstatcache( true, $path );
 
 		$result = array(
+			'status'    => 'done',
 			'backup_id' => $snapshot_id,
-			'tables'    => count( $tables ),
-			'rows'      => $rows,
+			'tables'    => count( $job['tables'] ),
+			'rows'      => $job['rows'],
 			'size'      => (int) filesize( $path ),
 		);
 
-		if ( $pulled ) {
+		if ( 0 === strpos( $snapshot_id, 'pull-' ) ) {
 			$result['sha256'] = (string) hash_file( 'sha256', $path );
 		} else {
 			self::prune();
@@ -312,45 +438,61 @@ class Hop_Connector_Database {
 	}
 
 	/**
-	 * Write the rows of one table, a few hundred at a time to spare memory.
+	 * Write the DROP and CREATE statements of one table.
 	 *
 	 * @param  resource $file   Open gzip handle.
 	 * @param  string   $table  Table name.
-	 * @return int Number of rows written.
+	 * @return void
+	 * @throws RuntimeException When the table cannot be described.
 	 */
-	private static function export_rows( $file, $table ) {
+	private static function write_structure( $file, $table ) {
 		global $wpdb;
 
-		$offset = 0;
-		$total  = 0;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names come from SHOW TABLES.
+		$create = $wpdb->get_row( "SHOW CREATE TABLE `{$table}`", ARRAY_N );
+
+		if ( ! is_array( $create ) || ! isset( $create[1] ) ) {
+			throw new RuntimeException( sprintf( 'SHOW CREATE TABLE %s', $table ) );
+		}
+
+		gzwrite( $file, "DROP TABLE IF EXISTS `{$table}`;\n" . str_replace( array( "\r", "\n" ), ' ', $create[1] ) . ";\n" );
+	}
+
+	/**
+	 * Write one batch of rows of a table: a few hundred, to spare memory.
+	 *
+	 * @param  resource $file    Open gzip handle.
+	 * @param  string   $table   Table name.
+	 * @param  int      $offset  First row of the batch.
+	 * @return int Rows written: fewer than ROWS_PER_GO at the end of the table.
+	 * @throws RuntimeException When the rows cannot be read.
+	 */
+	private static function export_batch( $file, $table, $offset ) {
+		global $wpdb;
+
 		// The connector's key never travels in a copy.
 		$where = $table === $wpdb->options ? $wpdb->prepare( ' WHERE option_name NOT LIKE %s', $wpdb->esc_like( self::OWN_OPTIONS ) . '%' ) : '';
 
-		do {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table name from SHOW TABLES, prepared condition, integers only.
-			$rows = $wpdb->get_results( sprintf( 'SELECT * FROM `%s`%s LIMIT %d OFFSET %d', $table, $where, self::ROWS_PER_GO, $offset ), ARRAY_N );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table name from SHOW TABLES, prepared condition, integers only.
+		$rows = $wpdb->get_results( sprintf( 'SELECT * FROM `%s`%s LIMIT %d OFFSET %d', $table, $where, self::ROWS_PER_GO, $offset ), ARRAY_N );
 
-			if ( null === $rows && '' !== $wpdb->last_error ) {
-				throw new RuntimeException( $wpdb->last_error );
+		if ( null === $rows && '' !== $wpdb->last_error ) {
+			throw new RuntimeException( $wpdb->last_error );
+		}
+
+		$rows = (array) $rows;
+
+		foreach ( array_chunk( $rows, self::ROWS_PER_INSERT ) as $chunk ) {
+			$values = array();
+
+			foreach ( $chunk as $row ) {
+				$values[] = '(' . implode( ',', array_map( array( __CLASS__, 'literal' ), $row ) ) . ')';
 			}
 
-			$rows = (array) $rows;
+			gzwrite( $file, "INSERT INTO `{$table}` VALUES " . implode( ',', $values ) . ";\n" );
+		}
 
-			foreach ( array_chunk( $rows, self::ROWS_PER_INSERT ) as $chunk ) {
-				$values = array();
-
-				foreach ( $chunk as $row ) {
-					$values[] = '(' . implode( ',', array_map( array( __CLASS__, 'literal' ), $row ) ) . ')';
-				}
-
-				gzwrite( $file, "INSERT INTO `{$table}` VALUES " . implode( ',', $values ) . ";\n" );
-			}
-
-			$total  += count( $rows );
-			$offset += self::ROWS_PER_GO;
-		} while ( count( $rows ) === self::ROWS_PER_GO );
-
-		return $total;
+		return count( $rows );
 	}
 
 	/**
@@ -410,7 +552,7 @@ class Hop_Connector_Database {
 	 * @return string|null
 	 */
 	private static function path( $snapshot_id, $kind = 'db' ) {
-		if ( 1 !== preg_match( '/^' . ( 'pull' === $kind ? 'pull' : 'db' ) . '-\d{14}-[a-f0-9]{16}$/', $snapshot_id ) ) {
+		if ( ! self::is_id( $snapshot_id, $kind ) ) {
 			return null;
 		}
 
@@ -421,6 +563,155 @@ class Hop_Connector_Database {
 		}
 
 		return $root . '/' . $snapshot_id . '.sql.gz';
+	}
+
+	/**
+	 * Whether an identifier is one start() could have given, for that kind.
+	 *
+	 * @param  string $snapshot_id  Identifier.
+	 * @param  string $kind         db or pull.
+	 * @return bool
+	 */
+	private static function is_id( $snapshot_id, $kind ) {
+		return 1 === preg_match( '/^' . ( 'pull' === $kind ? 'pull' : 'db' ) . '-\d{14}-[a-f0-9]{16}$/', $snapshot_id );
+	}
+
+	/**
+	 * Path of a copy being written.
+	 *
+	 * @param  string $root         Backup directory.
+	 * @param  string $snapshot_id  Identifier.
+	 * @return string
+	 */
+	private static function part_path( $root, $snapshot_id ) {
+		return $root . '/' . $snapshot_id . '.sql.gz.part';
+	}
+
+	/**
+	 * Path of the progress of a copy being written.
+	 *
+	 * @param  string $root         Backup directory.
+	 * @param  string $snapshot_id  Identifier.
+	 * @return string
+	 */
+	private static function job_path( $root, $snapshot_id ) {
+		return $root . '/' . $snapshot_id . '.job.json';
+	}
+
+	/**
+	 * Keep the progress of a copy for its next step.
+	 *
+	 * @param  string               $root         Backup directory.
+	 * @param  string               $snapshot_id  Identifier.
+	 * @param  array<string, mixed> $job          Progress.
+	 * @return bool
+	 */
+	private static function save_job( $root, $snapshot_id, array $job ) {
+		$path = self::job_path( $root, $snapshot_id );
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A small local file, closed to the web.
+		if ( false === file_put_contents( $path, (string) wp_json_encode( $job ) ) ) {
+			return false;
+		}
+
+		self::protect( $path );
+
+		return true;
+	}
+
+	/**
+	 * The progress of a copy being written, or null when there is none.
+	 *
+	 * @param  string $root         Backup directory.
+	 * @param  string $snapshot_id  Identifier.
+	 * @return array{tables: list<string>, table: int, offset: int, rows: int, bytes: int, held: int|false}|null
+	 */
+	private static function load_job( $root, $snapshot_id ) {
+		$path = self::job_path( $root, $snapshot_id );
+
+		if ( ! is_file( $path ) || ! is_file( self::part_path( $root, $snapshot_id ) ) ) {
+			return null;
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A small local file.
+		$job = json_decode( (string) file_get_contents( $path ), true );
+
+		if ( ! is_array( $job ) || ! isset( $job['tables'], $job['table'], $job['offset'], $job['rows'], $job['bytes'] ) || ! is_array( $job['tables'] ) ) {
+			return null;
+		}
+
+		// Table names go between backticks: the file is checked as if it came from outside.
+		$tables = array_values( array_filter( array_map( 'strval', $job['tables'] ), array( __CLASS__, 'is_safe_name' ) ) );
+
+		if ( count( $tables ) !== count( $job['tables'] ) || (int) $job['table'] > count( $tables ) ) {
+			return null;
+		}
+
+		return array(
+			'tables' => $tables,
+			'table'  => max( 0, (int) $job['table'] ),
+			'offset' => max( 0, (int) $job['offset'] ),
+			'rows'   => max( 0, (int) $job['rows'] ),
+			'bytes'  => max( 0, (int) $job['bytes'] ),
+			'held'   => isset( $job['held'] ) && false !== $job['held'] ? (int) $job['held'] : false,
+		);
+	}
+
+	/**
+	 * Cut a part back to the size it had at the end of the last step.
+	 *
+	 * @param  string $path   Part.
+	 * @param  int    $bytes  Size kept in the progress.
+	 * @return void
+	 * @throws RuntimeException When the part is shorter than that: it cannot be continued.
+	 */
+	private static function truncate( $path, $bytes ) {
+		clearstatcache( true, $path );
+		$size = (int) filesize( $path );
+
+		if ( $size === $bytes ) {
+			return;
+		}
+
+		if ( $size < $bytes ) {
+			throw new RuntimeException( __( 'la copie en cours a perdu une partie', 'hop-connector' ) );
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- ftruncate needs a handle.
+		$handle = fopen( $path, 'r+' );
+
+		if ( false === $handle || ! ftruncate( $handle, $bytes ) ) {
+			throw new RuntimeException( __( 'fichier illisible', 'hop-connector' ) );
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Handle opened above.
+		fclose( $handle );
+	}
+
+	/**
+	 * Drop a copy that failed: its part, its progress and its lock.
+	 *
+	 * @param  string    $root         Backup directory.
+	 * @param  string    $snapshot_id  Identifier.
+	 * @param  int|false $held         Lock held, or false.
+	 * @return void
+	 */
+	private static function abandon( $root, $snapshot_id, $held ) {
+		wp_delete_file( self::part_path( $root, $snapshot_id ) );
+		wp_delete_file( self::job_path( $root, $snapshot_id ) );
+		self::give_back( $held );
+	}
+
+	/**
+	 * Give the update lock back, when the copy holds it.
+	 *
+	 * @param  int|false $held  What acquire_lock() or renew_lock() returned.
+	 * @return void
+	 */
+	private static function give_back( $held ) {
+		if ( false !== $held ) {
+			Hop_Connector_Updater::release_lock( $held );
+		}
 	}
 
 	/**
@@ -437,7 +728,8 @@ class Hop_Connector_Database {
 	}
 
 	/**
-	 * Delete the snapshots older than MAX_AGE (hourly cron).
+	 * Delete the snapshots older than MAX_AGE, and what a copy left behind
+	 * after PULLED_MAX_AGE (hourly cron).
 	 *
 	 * @return void
 	 */
@@ -456,7 +748,14 @@ class Hop_Connector_Database {
 			}
 		}
 
-		foreach ( (array) glob( $root . '/pull-*.sql.gz' ) as $path ) {
+		// Copies taken away, and copies the platform stopped writing halfway.
+		$left_behind = array_merge(
+			(array) glob( $root . '/pull-*.sql.gz' ),
+			(array) glob( $root . '/*.sql.gz.part' ),
+			(array) glob( $root . '/*.job.json' )
+		);
+
+		foreach ( $left_behind as $path ) {
 			if ( (int) filemtime( $path ) < time() - self::PULLED_MAX_AGE ) {
 				wp_delete_file( $path );
 			}

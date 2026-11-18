@@ -184,6 +184,33 @@ class Hop_Connector_Rest {
 
 		register_rest_route(
 			self::REST_NAMESPACE,
+			'/backups/database/start',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'database_start' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/backups/database/continue',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'database_continue' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'backup_id' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
 			'/backups/database/restore',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -206,6 +233,33 @@ class Hop_Connector_Rest {
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( __CLASS__, 'pull_database' ),
 				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/backups/pull/database/start',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'pull_database_start' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/backups/pull/database/continue',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'pull_database_continue' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'backup_id' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
 			)
 		);
 
@@ -358,6 +412,29 @@ class Hop_Connector_Rest {
 	}
 
 	/**
+	 * Begin the copy of the database taken before updates, in steps.
+	 *
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function database_start() {
+		$result = Hop_Connector_Database::start( 'db' );
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Write the next part of the copy of the database taken before updates.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function database_continue( WP_REST_Request $request ) {
+		$result = Hop_Connector_Database::advance( (string) $request->get_param( 'backup_id' ), 'db' );
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
 	 * Put the database back as it was in a snapshot.
 	 *
 	 * @param  WP_REST_Request $request  Request.
@@ -376,6 +453,29 @@ class Hop_Connector_Rest {
 	 */
 	public static function pull_database() {
 		$result = Hop_Connector_Database::snapshot( 'pull' );
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Begin the copy of the database the platform takes away, in steps.
+	 *
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function pull_database_start() {
+		$result = Hop_Connector_Database::start( 'pull' );
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Write the next part of the copy of the database the platform takes away.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function pull_database_continue( WP_REST_Request $request ) {
+		$result = Hop_Connector_Database::advance( (string) $request->get_param( 'backup_id' ), 'pull' );
 
 		return is_wp_error( $result ) ? $result : self::respond( $result );
 	}
