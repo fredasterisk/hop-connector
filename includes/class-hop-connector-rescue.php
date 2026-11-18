@@ -51,10 +51,16 @@ class Hop_Connector_Rescue {
 			update_option(
 				self::OPTION_FATAL,
 				array(
-					'message' => substr( wp_strip_all_tags( (string) $error['message'] ), 0, 300 ),
-					'file'    => str_replace( wp_normalize_path( ABSPATH ), '', wp_normalize_path( (string) $error['file'] ) ),
-					'line'    => (int) $error['line'],
-					'time'    => time(),
+					'message'         => substr( wp_strip_all_tags( (string) $error['message'] ), 0, 300 ),
+					'file'            => str_replace( wp_normalize_path( ABSPATH ), '', wp_normalize_path( (string) $error['file'] ) ),
+					'line'            => (int) $error['line'],
+					'time'            => time(),
+					// When the crashed request began: one that began while an update was
+					// replacing files may have seen half of them, without the new version
+					// being broken. The platform compares it with copy_finished_at.
+					'request_started' => isset( $_SERVER['REQUEST_TIME_FLOAT'] ) ? (float) $_SERVER['REQUEST_TIME_FLOAT'] : null,
+					'sapi'            => PHP_SAPI,
+					'request'         => self::request_label(),
 				),
 				false
 			);
@@ -62,6 +68,27 @@ class Hop_Connector_Rescue {
 			// Nothing more can be done from a shutdown handler.
 			unset( $exception );
 		}
+	}
+
+	/**
+	 * Method and path of the current request, without its query string, which
+	 * may carry tokens. "cli" for WP-CLI and cron run from the command line.
+	 *
+	 * @return string
+	 */
+	private static function request_label() {
+		if ( 'cli' === PHP_SAPI ) {
+			return 'cli';
+		}
+
+		// phpcs:disable WordPress.Security.ValidatedSanitizedInput -- Cleaned below, stored for the platform only.
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? (string) $_SERVER['REQUEST_METHOD'] : '';
+		$path   = isset( $_SERVER['REQUEST_URI'] ) ? (string) strtok( (string) $_SERVER['REQUEST_URI'], '?' ) : '';
+		// phpcs:enable
+
+		$label = preg_replace( '/[^\x20-\x7E]/', '', strtoupper( substr( $method, 0, 10 ) ) . ' ' . $path );
+
+		return substr( trim( (string) $label ), 0, 200 );
 	}
 
 	/**

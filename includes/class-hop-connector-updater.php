@@ -264,15 +264,18 @@ class Hop_Connector_Updater {
 		// bulk_upgrade() keeps an active plugin active; upgrade() would deactivate it.
 		$skin     = new Automatic_Upgrader_Skin();
 		$upgrader = new Plugin_Upgrader( $skin );
+		$copy     = array( 'copy_started_at' => microtime( true ) );
 		$results  = $upgrader->bulk_upgrade( array( $file ) );
 		$result   = is_array( $results ) && isset( $results[ $file ] ) ? $results[ $file ] : false;
+
+		$copy['copy_finished_at'] = microtime( true );
 
 		wp_clean_plugins_cache( true );
 
 		$plugins = get_plugins();
 		$to      = isset( $plugins[ $file ] ) ? (string) $plugins[ $file ]['Version'] : '';
 
-		return self::result( $result, $skin, $from, $to, $backup_id );
+		return self::result( $result, $skin, $from, $to, $backup_id, $copy );
 	}
 
 	/**
@@ -308,12 +311,15 @@ class Hop_Connector_Updater {
 
 		$skin     = new Automatic_Upgrader_Skin();
 		$upgrader = new Theme_Upgrader( $skin );
+		$copy     = array( 'copy_started_at' => microtime( true ) );
 		$results  = $upgrader->bulk_upgrade( array( $slug ) );
 		$result   = is_array( $results ) && isset( $results[ $slug ] ) ? $results[ $slug ] : false;
 
+		$copy['copy_finished_at'] = microtime( true );
+
 		wp_clean_themes_cache( true );
 
-		return self::result( $result, $skin, $from, (string) wp_get_theme( $slug )->get( 'Version' ), $backup_id );
+		return self::result( $result, $skin, $from, (string) wp_get_theme( $slug )->get( 'Version' ), $backup_id, $copy );
 	}
 
 	/**
@@ -340,7 +346,10 @@ class Hop_Connector_Updater {
 
 		$skin     = new Automatic_Upgrader_Skin();
 		$upgrader = new Core_Upgrader( $skin );
+		$copy     = array( 'copy_started_at' => microtime( true ) );
 		$result   = $upgrader->upgrade( $update );
+
+		$copy['copy_finished_at'] = microtime( true );
 
 		// The running request still has the old version loaded: read the new one from disk.
 		$to = $from;
@@ -349,7 +358,7 @@ class Hop_Connector_Updater {
 			$to = $result;
 		}
 
-		return self::result( is_wp_error( $result ) ? $result : true, $skin, $from, $to, null );
+		return self::result( is_wp_error( $result ) ? $result : true, $skin, $from, $to, null, $copy );
 	}
 
 	/**
@@ -389,9 +398,10 @@ class Hop_Connector_Updater {
 	 * @param  string                  $from       Version before.
 	 * @param  string                  $to         Version after.
 	 * @param  string|null             $backup_id  Backup taken before the update.
+	 * @param  array<string,float>     $copy       When the upgrader started and stopped replacing files.
 	 * @return array<string,mixed>
 	 */
-	private static function result( $result, $skin, $from, $to, $backup_id ) {
+	private static function result( $result, $skin, $from, $to, $backup_id, array $copy = array() ) {
 		$messages = array_map( 'wp_strip_all_tags', array_map( 'strval', $skin->get_upgrade_messages() ) );
 
 		if ( is_wp_error( $result ) ) {
@@ -408,7 +418,7 @@ class Hop_Connector_Updater {
 			'to'        => $to,
 			'backup_id' => $backup_id,
 			'messages'  => array_values( array_unique( array_filter( $messages ) ) ),
-		);
+		) + $copy;
 	}
 
 	/**
