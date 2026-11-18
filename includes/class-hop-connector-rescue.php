@@ -196,6 +196,30 @@ class Hop_Connector_Rescue {
 	}
 
 	/**
+	 * Source of the must-use loader, as this version of the connector writes it.
+	 *
+	 * @return string
+	 */
+	public static function loader_source() {
+		$class = wp_normalize_path( __FILE__ );
+
+		return "<?php\n/**\n * Plugin Name: Connecteur Espace client (secours)\n * Description: Charge le point d'accès de secours du connecteur avant les autres extensions. Installé et retiré par le Connecteur Espace client.\n */\n\ndefined( 'ABSPATH' ) || exit;\n\n"
+			. '$hop_connector_rescue = ' . var_export( $class, true ) . ";\n\n" // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generates PHP source.
+			. "if ( is_readable( \$hop_connector_rescue ) ) {\n\tdefine( 'HOP_CONNECTOR_RESCUE', true );\n\trequire_once \$hop_connector_rescue;\n\tHop_Connector_Rescue::boot();\n}\n\nunset( \$hop_connector_rescue );\n";
+	}
+
+	/**
+	 * Whether the must-use loader is present and written by this version of
+	 * the connector (its name and path follow the connector's updates).
+	 *
+	 * @return bool
+	 */
+	public static function is_current() {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		return is_readable( self::loader_path() ) && file_get_contents( self::loader_path() ) === self::loader_source();
+	}
+
+	/**
 	 * Install the must-use loader. Returns false when the host forbids it;
 	 * the connector then works without the rescue endpoint.
 	 *
@@ -206,13 +230,8 @@ class Hop_Connector_Rescue {
 			return false;
 		}
 
-		$class  = wp_normalize_path( __FILE__ );
-		$loader = "<?php\n/**\n * Plugin Name: Hop Connector (secours)\n * Description: Charge le point d'accès de secours de Hop Connector avant les autres extensions. Installé et retiré par Hop Connector.\n */\n\ndefined( 'ABSPATH' ) || exit;\n\n"
-			. '$hop_connector_rescue = ' . var_export( $class, true ) . ";\n\n" // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generates PHP source.
-			. "if ( is_readable( \$hop_connector_rescue ) ) {\n\tdefine( 'HOP_CONNECTOR_RESCUE', true );\n\trequire_once \$hop_connector_rescue;\n\tHop_Connector_Rescue::boot();\n}\n\nunset( \$hop_connector_rescue );\n";
-
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Single small file, no credentials prompt wanted.
-		return false !== file_put_contents( self::loader_path(), $loader );
+		return false !== file_put_contents( self::loader_path(), self::loader_source() );
 	}
 
 	/**

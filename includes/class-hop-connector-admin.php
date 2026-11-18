@@ -8,7 +8,7 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Settings page under Settings > Hop Connector.
+ * Settings page under Settings > Connecteur Espace client.
  */
 class Hop_Connector_Admin {
 
@@ -23,8 +23,8 @@ class Hop_Connector_Admin {
 	 */
 	public static function register_page() {
 		add_options_page(
-			__( 'Hop Connector', 'hop-connector' ),
-			__( 'Hop Connector', 'hop-connector' ),
+			__( 'Connecteur Espace client', 'hop-connector' ),
+			__( 'Connecteur Espace client', 'hop-connector' ),
 			self::capability(),
 			self::PAGE,
 			array( __CLASS__, 'render' )
@@ -111,7 +111,7 @@ class Hop_Connector_Admin {
 		}
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'Hop Connector', 'hop-connector' ); ?></h1>
+			<h1><?php esc_html_e( 'Connecteur Espace client', 'hop-connector' ); ?></h1>
 
 			<h2><?php esc_html_e( 'Connexion à la plateforme', 'hop-connector' ); ?></h2>
 
@@ -131,11 +131,11 @@ class Hop_Connector_Admin {
 					$signing = Hop_Connector_Keys::signing();
 
 					if ( 'ed25519' === $signing ) {
-						esc_html_e( 'Ce site ne garde que la clé publique de Hop : lire sa base de données ne permet pas de signer une requête.', 'hop-connector' );
+						esc_html_e( 'Ce site ne garde que la clé publique de la plateforme : lire sa base de données ne permet pas de signer une requête.', 'hop-connector' );
 					} elseif ( 'ed25519_pending' === $signing ) {
-						esc_html_e( 'Passage à la clé publique de Hop en cours : le secret partagé sera retiré à la prochaine requête de Hop.', 'hop-connector' );
+						esc_html_e( 'Passage à la clé publique de la plateforme en cours : le secret partagé sera retiré à sa prochaine requête.', 'hop-connector' );
 					} else {
-						esc_html_e( 'Ce site garde un secret partagé avec Hop. Hop le remplacera par sa clé publique à sa prochaine synchronisation.', 'hop-connector' );
+						esc_html_e( 'Ce site garde un secret partagé avec la plateforme. Elle le remplacera par sa clé publique à sa prochaine synchronisation.', 'hop-connector' );
 					}
 					?>
 				</p>
@@ -147,7 +147,7 @@ class Hop_Connector_Admin {
 				<div class="notice notice-warning inline">
 					<p><strong><?php esc_html_e( 'Jeton d\'appairage (affiché une seule fois, valide 15 minutes) :', 'hop-connector' ); ?></strong></p>
 					<p><input type="text" class="large-text code" readonly value="<?php echo esc_attr( $token ); ?>" onfocus="this.select();" /></p>
-					<p><?php esc_html_e( 'Collez-le dans Hop pour terminer l\'appairage.', 'hop-connector' ); ?></p>
+					<p><?php esc_html_e( 'Collez-le dans l’espace client pour terminer l\'appairage.', 'hop-connector' ); ?></p>
 				</div>
 			<?php } elseif ( $pending ) { ?>
 				<p><em><?php esc_html_e( 'Un jeton d\'appairage est en attente d\'utilisation. En générer un nouveau l\'annule.', 'hop-connector' ); ?></em></p>

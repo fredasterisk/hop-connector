@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name:       Hop Connector
- * Description:       Connecte ce site à la plateforme de gestion Hop (inventaire, mises à jour, sauvegardes, connexion en un clic) par des requêtes signées.
+ * Plugin Name:       Connecteur Espace client
+ * Description:       Relie ce site à l’espace client (inventaire, mises à jour, sauvegardes, connexion en un clic) par des requêtes signées.
  * Version:           0.12.0
  * Requires at least: 6.5
  * Requires PHP:      7.4
@@ -57,7 +57,7 @@ add_action( 'hop_connector_cleanup', array( 'Hop_Connector_Database', 'purge_exp
 add_action(
 	'admin_init',
 	static function () {
-		if ( ! defined( 'HOP_CONNECTOR_RESCUE' ) && current_user_can( 'manage_options' ) ) {
+		if ( current_user_can( 'manage_options' ) && ( ! defined( 'HOP_CONNECTOR_RESCUE' ) || ! Hop_Connector_Rescue::is_current() ) ) {
 			Hop_Connector_Rescue::install();
 		}
 	}

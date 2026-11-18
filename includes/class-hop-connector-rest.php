@@ -625,7 +625,7 @@ class Hop_Connector_Rest {
 			);
 
 			if ( null === $replaced ) {
-				return new WP_Error( 'hop_secret_required', __( 'La confirmation doit fournir la clé publique de Hop ou un nouveau secret.', 'hop-connector' ), array( 'status' => 400 ) );
+				return new WP_Error( 'hop_secret_required', __( 'La confirmation doit fournir la clé publique de la plateforme ou un nouveau secret.', 'hop-connector' ), array( 'status' => 400 ) );
 			}
 
 			$rotated = true;
@@ -657,7 +657,7 @@ class Hop_Connector_Rest {
 	 */
 	public static function confirm_key() {
 		if ( 'ed25519' !== Hop_Connector_Auth::algorithm() || ! Hop_Connector_Keys::drop_secret() ) {
-			return new WP_Error( 'hop_confirm_refused', __( 'Seule une requête signée avec la clé privée de Hop peut retirer le secret partagé.', 'hop-connector' ), array( 'status' => 409 ) );
+			return new WP_Error( 'hop_confirm_refused', __( 'Seule une requête signée avec la clé privée de la plateforme peut retirer le secret partagé.', 'hop-connector' ), array( 'status' => 409 ) );
 		}
 
 		return self::respond( Hop_Connector_Inventory::status() );

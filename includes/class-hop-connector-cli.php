@@ -51,13 +51,13 @@ class Hop_Connector_Cli {
 		if ( 'public_key' === $key['type'] ) {
 			Hop_Connector_Keys::activate( $key['key_id'], array( 'public_key' => $key['public_key'] ) );
 
-			WP_CLI::success( 'Clé publique de Hop enregistrée : le site est appairé.' );
+			WP_CLI::success( 'Clé publique de la plateforme enregistrée : le site est appairé.' );
 
 			return;
 		}
 
 		Hop_Connector_Keys::store_pending( $key['key_id'], $key['secret'] );
 
-		WP_CLI::success( 'Jeton enregistré : Hop doit le confirmer dans les 15 minutes.' );
+		WP_CLI::success( 'Jeton enregistré : la plateforme doit le confirmer dans les 15 minutes.' );
 	}
 }
