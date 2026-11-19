@@ -21,7 +21,7 @@ defined( 'ABSPATH' ) || exit;
 class Hop_Connector_Database {
 
 	const KEEP            = 3;
-	const ROWS_PER_GO     = 500;
+	const ROWS_PER_GO     = 1000;
 	const ROWS_PER_INSERT = 100;
 
 	/**
@@ -141,6 +141,7 @@ class Hop_Connector_Database {
 			'tables' => self::tables(),
 			'table'  => 0,
 			'offset' => 0,
+			'after'  => null,
 			'rows'   => 0,
 			'bytes'  => (int) filesize( $part ),
 			'held'   => $held,
@@ -201,14 +202,16 @@ class Hop_Connector_Database {
 						self::write_structure( $file, $table );
 					}
 
-					$exported     = self::export_batch( $file, $table, $job['offset'] );
-					$job['rows'] += $exported;
+					list( $exported, $last ) = self::export_batch( $file, $table, $job['offset'], $job['after'] );
+					$job['rows']            += $exported;
 
 					if ( $exported < self::ROWS_PER_GO ) {
 						++$job['table'];
 						$job['offset'] = 0;
+						$job['after']  = null;
 					} else {
 						$job['offset'] += self::ROWS_PER_GO;
+						$job['after']   = $last;
 					}
 				}
 
@@ -894,40 +897,111 @@ class Hop_Connector_Database {
 	}
 
 	/**
-	 * Write one batch of rows of a table: a few hundred, to spare memory.
+	 * Write one batch of rows of a table: a thousand, to spare memory.
 	 *
-	 * @param  resource $file    Open gzip handle.
-	 * @param  string   $table   Table name.
-	 * @param  int      $offset  First row of the batch.
-	 * @return int Rows written: fewer than ROWS_PER_GO at the end of the table.
+	 * A table with a primary key of one whole-number column is read in the
+	 * order of that key, from the last key written: each batch costs the
+	 * same, from the start of the table to its end. Read by offset, MySQL
+	 * goes over every row before the offset again, and a table of a million
+	 * rows took hours. Only the other tables, small ones, are still read by
+	 * offset.
+	 *
+	 * @param  resource    $file    Open gzip handle.
+	 * @param  string      $table   Table name.
+	 * @param  int         $offset  Rows of the table already written.
+	 * @param  string|null $after   Last key written, null when read by offset
+	 *                              or at the start of the table.
+	 * @return array{0: int, 1: string|null} Rows written (fewer than
+	 *                                       ROWS_PER_GO at the end of the table),
+	 *                                       and the last key written.
 	 * @throws RuntimeException When the rows cannot be read.
 	 */
-	private static function export_batch( $file, $table, $offset ) {
+	private static function export_batch( $file, $table, $offset, $after ) {
 		global $wpdb;
 
-		// The connector's key never travels in a copy.
-		$where = $table === $wpdb->options ? $wpdb->prepare( ' WHERE option_name NOT LIKE %s', $wpdb->esc_like( self::OWN_OPTIONS ) . '%' ) : '';
+		// A copy begun by offset, by an older connector, goes on by offset.
+		$key = null === $after && $offset > 0 ? null : self::whole_number_key( $table );
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table name from SHOW TABLES, prepared condition, integers only.
-		$rows = $wpdb->get_results( sprintf( 'SELECT * FROM `%s`%s LIMIT %d OFFSET %d', $table, $where, self::ROWS_PER_GO, $offset ), ARRAY_N );
+		$conditions = array();
+
+		// The connector's key never travels in a copy.
+		if ( $table === $wpdb->options ) {
+			$conditions[] = $wpdb->prepare( 'option_name NOT LIKE %s', $wpdb->esc_like( self::OWN_OPTIONS ) . '%' );
+		}
+
+		if ( null !== $key && null !== $after ) {
+			$conditions[] = sprintf( '`%s` > %s', $key, $after );
+		}
+
+		$where = $conditions ? ' WHERE ' . implode( ' AND ', $conditions ) : '';
+		$range = null === $key
+			? sprintf( ' LIMIT %d OFFSET %d', self::ROWS_PER_GO, $offset )
+			: sprintf( ' ORDER BY `%s` LIMIT %d', $key, self::ROWS_PER_GO );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table and column names from SHOW TABLES and SHOW KEYS, prepared condition, integers only.
+		$rows = $wpdb->get_results( 'SELECT * FROM `' . $table . '`' . $where . $range, ARRAY_A );
 
 		if ( null === $rows && '' !== $wpdb->last_error ) {
 			throw new RuntimeException( $wpdb->last_error );
 		}
 
 		$rows = (array) $rows;
+		$last = null;
+
+		if ( null !== $key && $rows ) {
+			$last = (string) end( $rows )[ $key ];
+
+			if ( 1 !== preg_match( '/^-?\d{1,20}$/', $last ) ) {
+				throw new RuntimeException( sprintf( 'clé %s.%s', $table, $key ) );
+			}
+		}
 
 		foreach ( array_chunk( $rows, self::ROWS_PER_INSERT ) as $chunk ) {
 			$values = array();
 
 			foreach ( $chunk as $row ) {
-				$values[] = '(' . implode( ',', array_map( array( __CLASS__, 'literal' ), $row ) ) . ')';
+				$values[] = '(' . implode( ',', array_map( array( __CLASS__, 'literal' ), array_values( $row ) ) ) . ')';
 			}
 
 			gzwrite( $file, "INSERT INTO `{$table}` VALUES " . implode( ',', $values ) . ";\n" );
 		}
 
-		return count( $rows );
+		return array( count( $rows ), $last );
+	}
+
+	/**
+	 * The column of a table's primary key when it is a single whole-number
+	 * column, null otherwise.
+	 *
+	 * @param  string $table  Table name.
+	 * @return string|null
+	 */
+	private static function whole_number_key( $table ) {
+		global $wpdb;
+		static $keys = array();
+
+		if ( array_key_exists( $table, $keys ) ) {
+			return $keys[ $table ];
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from SHOW TABLES.
+		$columns = (array) $wpdb->get_results( "SHOW KEYS FROM `{$table}` WHERE Key_name = 'PRIMARY'", ARRAY_A );
+		$keys[ $table ] = null;
+
+		if ( 1 !== count( $columns ) || ! is_string( $columns[0]['Column_name'] ?? null ) || ! self::is_safe_name( $columns[0]['Column_name'] ) ) {
+			return null;
+		}
+
+		$column = $columns[0]['Column_name'];
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from SHOW TABLES.
+		$type = $wpdb->get_row( $wpdb->prepare( "SHOW COLUMNS FROM `{$table}` LIKE %s", $wpdb->esc_like( $column ) ), ARRAY_A );
+
+		if ( is_array( $type ) && 1 === preg_match( '/^(tiny|small|medium|big)?int\b/i', (string) ( $type['Type'] ?? '' ) ) ) {
+			$keys[ $table ] = $column;
+		}
+
+		return $keys[ $table ];
 	}
 
 	/**
@@ -1097,7 +1171,7 @@ class Hop_Connector_Database {
 	 *
 	 * @param  string $root         Backup directory.
 	 * @param  string $snapshot_id  Identifier.
-	 * @return array{tables: list<string>, table: int, offset: int, rows: int, bytes: int, held: int|false}|null
+	 * @return array{tables: list<string>, table: int, offset: int, after: string|null, rows: int, bytes: int, held: int|false}|null
 	 */
 	private static function load_job( $root, $snapshot_id ) {
 		$job = is_file( self::part_path( $root, $snapshot_id ) ) ? self::read_json( self::job_path( $root, $snapshot_id ) ) : null;
@@ -1117,6 +1191,8 @@ class Hop_Connector_Database {
 			'tables' => $tables,
 			'table'  => max( 0, (int) $job['table'] ),
 			'offset' => max( 0, (int) $job['offset'] ),
+			// Goes into the query: digits only, like every key it comes from.
+			'after'  => isset( $job['after'] ) && 1 === preg_match( '/^-?\d{1,20}$/', (string) $job['after'] ) ? (string) $job['after'] : null,
 			'rows'   => max( 0, (int) $job['rows'] ),
 			'bytes'  => max( 0, (int) $job['bytes'] ),
 			'held'   => isset( $job['held'] ) && false !== $job['held'] ? (int) $job['held'] : false,
