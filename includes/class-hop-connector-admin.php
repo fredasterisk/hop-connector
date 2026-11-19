@@ -250,7 +250,7 @@ class Hop_Connector_Admin {
 			<?php
 			printf(
 				/* translators: %s: list of action names. */
-				esc_html__( 'Actions possibles : %s. Pour tout couper : HOP_CONNECTOR_DISABLED à true.', 'hop-connector' ),
+				esc_html__( 'Actions possibles : %s. Pour tout couper : HOP_CONNECTOR_DISABLED à true. Après un changement dans wp-config.php, vider le cache du serveur (OPcache, cache d’objets) ou redéployer : sinon l’ancienne version du fichier reste en service.', 'hop-connector' ),
 				esc_html( implode( ', ', array_keys( Hop_Connector_Guard::actions() ) ) )
 			);
 			?>
