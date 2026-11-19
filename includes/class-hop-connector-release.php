@@ -29,7 +29,10 @@ class Hop_Connector_Release {
 	 *
 	 * @var array<string, string>
 	 */
-	const KEYS = array();
+	const KEYS = array(
+		'principale-2026' => 'mVIVSCuhCQmOLlfg5g/XUAZUn2R1Qi/wDDG1HtCsubg=',
+		'secours-2026'    => 'ImxoodIpdOGcORYHoK0YrQGWf0cBk6/kGi7qyKveMvw=',
+	);
 
 	const MANIFEST = 'release.json';
 
