@@ -62,19 +62,13 @@ class Hop_Connector_Rest {
 				'callback'            => array( __CLASS__, 'login_token' ),
 				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
 				'args'                => array(
-					'user_id' => array(
-						'type'              => 'integer',
-						'minimum'           => 0,
-						'default'           => 0,
-						'sanitize_callback' => 'absint',
-					),
 					// Checked by the login class: an invalid address must be
 					// refused, not emptied into "no address given".
-					'email'   => array(
+					'email' => array(
 						'type'    => 'string',
 						'default' => '',
 					),
-					'name'    => array(
+					'name'  => array(
 						'type'              => 'string',
 						'default'           => '',
 						'sanitize_callback' => 'sanitize_text_field',
@@ -83,31 +77,6 @@ class Hop_Connector_Rest {
 			)
 		);
 
-		register_rest_route(
-			self::REST_NAMESPACE,
-			'/keys/upgrade',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'upgrade_key' ),
-				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
-				'args'                => array(
-					'public_key' => array(
-						'type'     => 'string',
-						'required' => true,
-					),
-				),
-			)
-		);
-
-		register_rest_route(
-			self::REST_NAMESPACE,
-			'/keys/confirm',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'confirm_key' ),
-				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
-			)
-		);
 		register_rest_route(
 			self::REST_NAMESPACE,
 			'/updates/refresh',
@@ -604,7 +573,7 @@ class Hop_Connector_Rest {
 
 	/**
 	 * Confirm the pairing: the pending key becomes the active key, replaced by
-	 * the platform's public key (or, from an older platform, a new secret).
+	 * the platform's public key.
 	 *
 	 * @param  WP_REST_Request $request  Request.
 	 * @return WP_REST_Response|WP_Error
@@ -617,50 +586,14 @@ class Hop_Connector_Rest {
 		// it must: whoever saw the token pass (a command history, the process
 		// list of a shared server) cannot keep the site's key alongside Hop.
 		if ( $pending && hash_equals( (string) $pending['key_id'], (string) $request->get_header( 'x_hop_key_id' ) ) ) {
-			$replaced = Hop_Connector_Keys::promote_pending(
-				array(
-					'public_key' => $request->get_param( 'public_key' ),
-					'secret'     => $request->get_param( 'secret' ),
-				)
-			);
-
-			if ( null === $replaced ) {
-				return new WP_Error( 'hop_secret_required', __( 'La confirmation doit fournir la clé publique de la plateforme ou un nouveau secret.', 'hop-connector' ), array( 'status' => 400 ) );
+			if ( ! Hop_Connector_Keys::promote_pending( $request->get_param( 'public_key' ) ) ) {
+				return new WP_Error( 'hop_public_key_required', __( 'La confirmation doit fournir la clé publique de la plateforme.', 'hop-connector' ), array( 'status' => 400 ) );
 			}
 
 			$rotated = true;
 		}
 
 		return self::respond( array_merge( Hop_Connector_Inventory::status(), array( 'rotated' => $rotated ) ) );
-	}
-
-	/**
-	 * Move a site paired with a shared secret to the platform's public key.
-	 * The secret stays valid until confirm_key().
-	 *
-	 * @param  WP_REST_Request $request  Request.
-	 * @return WP_REST_Response|WP_Error
-	 */
-	public static function upgrade_key( WP_REST_Request $request ) {
-		if ( ! Hop_Connector_Keys::offer_public_key( $request->get_param( 'public_key' ) ) ) {
-			return new WP_Error( 'hop_upgrade_refused', __( 'Ce site ne garde plus de secret partagé, ou la clé publique reçue est invalide.', 'hop-connector' ), array( 'status' => 409 ) );
-		}
-
-		return self::respond( Hop_Connector_Inventory::status() );
-	}
-
-	/**
-	 * Forget the shared secret, once the platform signed this request with
-	 * the private key matching the public key it gave.
-	 *
-	 * @return WP_REST_Response|WP_Error
-	 */
-	public static function confirm_key() {
-		if ( 'ed25519' !== Hop_Connector_Auth::algorithm() || ! Hop_Connector_Keys::drop_secret() ) {
-			return new WP_Error( 'hop_confirm_refused', __( 'Seule une requête signée avec la clé privée de la plateforme peut retirer le secret partagé.', 'hop-connector' ), array( 'status' => 409 ) );
-		}
-
-		return self::respond( Hop_Connector_Inventory::status() );
 	}
 
 	/**
@@ -683,14 +616,13 @@ class Hop_Connector_Rest {
 
 	/**
 	 * Issue a single-use login URL, for the account of the agency member who
-	 * asked (by email), or for an administrator when no email is given.
+	 * asked, found or created by email address.
 	 *
 	 * @param  WP_REST_Request $request  Request.
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public static function login_token( WP_REST_Request $request ) {
 		$issued = Hop_Connector_Login::issue(
-			(int) $request->get_param( 'user_id' ),
 			(string) $request->get_param( 'email' ),
 			(string) $request->get_param( 'name' )
 		);

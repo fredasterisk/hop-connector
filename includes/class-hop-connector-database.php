@@ -519,6 +519,22 @@ class Hop_Connector_Database {
 			self::give_back( $job['held'] );
 			wp_cache_flush();
 
+			Hop_Connector_Log::record(
+				'restored',
+				array(
+					'result' => 'restored',
+					'note'   => $job['backup_id'],
+				)
+			);
+			Hop_Connector_Log::notify(
+				__( 'La base de données a été restaurée', 'hop-connector' ),
+				sprintf(
+					/* translators: %s: identifier of the copy. */
+					__( "La base de données de ce site vient d’être remise dans l’état de la copie %s, à la demande de la plateforme. Ce qui a été écrit dans le site depuis cette copie n’y est plus.\n\nSi cette restauration n’était pas prévue : déconnecter le site dans Réglages > Connecteur Espace client, puis prévenir l’agence.", 'hop-connector' ),
+					$job['backup_id']
+				)
+			);
+
 			return array(
 				'status'     => 'restored',
 				'backup_id'  => $job['backup_id'],
@@ -1316,6 +1332,49 @@ class Hop_Connector_Database {
 			if ( (int) filemtime( $path ) < time() - self::PULLED_MAX_AGE ) {
 				wp_delete_file( $path );
 			}
+		}
+	}
+
+	/**
+	 * Delete every copy of the database and what a copy or a restoration left
+	 * behind, when the connector is deactivated: the hourly cleanup stops with
+	 * it, and the copies hold the site's personal data. Copies of plugins,
+	 * kept for a rollback, stay until the uninstall.
+	 *
+	 * @return void
+	 */
+	public static function purge_all() {
+		if ( ! get_option( 'hop_connector_backup_dir' ) ) {
+			return;
+		}
+
+		$root = Hop_Connector_Updater::backup_root();
+
+		if ( is_wp_error( $root ) ) {
+			return;
+		}
+
+		foreach ( (array) glob( $root . '/restore-*.restore.json' ) as $path ) {
+			$restore_id = basename( $path, '.restore.json' );
+			$job        = self::load_restore( $root, $restore_id, false );
+
+			if ( null === $job ) {
+				wp_delete_file( $path );
+			} else {
+				self::abandon_restore( $root, $restore_id, $job );
+			}
+		}
+
+		$copies = array_merge(
+			(array) glob( $root . '/db-*.sql.gz' ),
+			(array) glob( $root . '/pull-*.sql.gz' ),
+			(array) glob( $root . '/*.sql.gz.part' ),
+			(array) glob( $root . '/*.job.json' ),
+			(array) glob( $root . '/restore-*.sql' )
+		);
+
+		foreach ( $copies as $path ) {
+			wp_delete_file( $path );
 		}
 	}
 

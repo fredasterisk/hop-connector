@@ -24,34 +24,42 @@ class Hop_Connector_Login {
 	const AGENCY_META = 'hop_connector_agency_account';
 
 	/**
+	 * Login links issued in the last hour, outside the login_ prefix that the
+	 * hourly cleanup sweeps.
+	 */
+	const OPTION_RATE = 'hop_connector_rate_login';
+
+	const MAX_PER_HOUR = 10;
+
+	/**
 	 * Create a login URL.
 	 *
-	 * With an email, the URL opens the account of the agency member who asked
-	 * (created the first time), never the client's own account: what the agency
-	 * does in wp-admin shows under its own name, and the client's two-factor
-	 * login stays theirs. Without one, as older platforms ask, it opens the
-	 * requested or the oldest administrator.
+	 * The URL opens the account of the agency member who asked (created the
+	 * first time), never the client's own account: what the agency does in
+	 * wp-admin shows under its own name, and the client's two-factor login
+	 * stays theirs. Ten links an hour at most: more is no one at work.
 	 *
-	 * @param  int    $user_id  Requested user, or 0 for the oldest administrator.
-	 * @param  string $email    Email address of the agency member, verified by the platform.
-	 * @param  string $name     Name shown for an account created now.
+	 * @param  string $email  Email address of the agency member, verified by the platform.
+	 * @param  string $name   Name shown for an account created now.
 	 * @return array{url:string,user:array{login:string,created:bool}}|WP_Error
 	 */
-	public static function issue( $user_id, $email = '', $name = '' ) {
-		$created = false;
-
-		if ( '' !== $email ) {
-			$account = self::agency_account( $email, $name );
-
-			if ( is_wp_error( $account ) ) {
-				return $account;
-			}
-
-			$user    = $account['user'];
-			$created = $account['created'];
-		} else {
-			$user = $user_id ? get_user_by( 'id', $user_id ) : self::first_administrator();
+	public static function issue( $email, $name = '' ) {
+		if ( '' === $email ) {
+			return new WP_Error( 'hop_email_required', __( 'La connexion demande l’adresse courriel du membre de l’agence.', 'hop-connector' ), array( 'status' => 400 ) );
 		}
+
+		if ( ! self::take_rate() ) {
+			return new WP_Error( 'hop_login_rate', __( 'Trop de connexions demandées dans la dernière heure. Réessayer plus tard.', 'hop-connector' ), array( 'status' => 429 ) );
+		}
+
+		$account = self::agency_account( $email, $name );
+
+		if ( is_wp_error( $account ) ) {
+			return $account;
+		}
+
+		$user    = $account['user'];
+		$created = $account['created'];
 
 		if ( ! $user || ! user_can( $user, 'manage_options' ) ) {
 			return new WP_Error( 'hop_no_user', __( 'Aucun compte administrateur disponible.', 'hop-connector' ), array( 'status' => 404 ) );
@@ -129,6 +137,19 @@ class Hop_Connector_Login {
 		}
 
 		update_user_meta( $user_id, self::AGENCY_META, time() );
+
+		$login = (string) get_userdata( $user_id )->user_login;
+
+		Hop_Connector_Log::record( 'account_created', array( 'note' => $login . ' <' . $email . '>' ) );
+		Hop_Connector_Log::notify(
+			__( 'Un compte administrateur a été créé pour l’agence', 'hop-connector' ),
+			sprintf(
+				/* translators: 1: login name, 2: email address. */
+				__( "Le Connecteur Espace client vient de créer le compte administrateur %1\$s (%2\$s), pour un membre de l’agence qui se connecte depuis la plateforme.\n\nCe compte n’accepte ni mot de passe ni réinitialisation : il n’ouvre que par la plateforme. Il est supprimé quand le site est déconnecté.\n\nSi cette création n’était pas prévue : déconnecter le site dans Réglages > Connecteur Espace client, puis prévenir l’agence.", 'hop-connector' ),
+				$login,
+				$email
+			)
+		);
 
 		return array(
 			'user'    => get_user_by( 'id', $user_id ),
@@ -233,20 +254,133 @@ class Hop_Connector_Login {
 	}
 
 	/**
-	 * Oldest administrator account.
+	 * Count one more link in the last hour, unless the hour is full.
 	 *
-	 * @return WP_User|null
+	 * @return bool Whether a link may be issued.
 	 */
-	private static function first_administrator() {
-		$users = get_users(
+	private static function take_rate() {
+		$since  = time() - HOUR_IN_SECONDS;
+		$issued = array_values(
+			array_filter(
+				(array) get_option( self::OPTION_RATE, array() ),
+				static function ( $time ) use ( $since ) {
+					return (int) $time > $since;
+				}
+			)
+		);
+
+		if ( count( $issued ) >= self::MAX_PER_HOUR ) {
+			return false;
+		}
+
+		$issued[] = time();
+		update_option( self::OPTION_RATE, $issued, false );
+
+		return true;
+	}
+
+	/**
+	 * Whether an account is one the connector created for the agency.
+	 *
+	 * @param  int $user_id  User ID.
+	 * @return bool
+	 */
+	public static function is_agency_account( $user_id ) {
+		return (int) $user_id > 0 && '' !== (string) get_user_meta( (int) $user_id, self::AGENCY_META, true );
+	}
+
+	/**
+	 * No password reset for an agency account: it opens through the platform
+	 * only, so taking an agency member's mailbox does not open the site.
+	 *
+	 * @param  bool $allow    Whether the reset is allowed.
+	 * @param  int  $user_id  User ID.
+	 * @return bool
+	 */
+	public static function refuse_password_reset( $allow, $user_id ) {
+		return self::is_agency_account( $user_id ) ? false : $allow;
+	}
+
+	/**
+	 * No password login for an agency account either.
+	 *
+	 * @param  WP_User|WP_Error|null $user  Result of the earlier checks.
+	 * @return WP_User|WP_Error|null
+	 */
+	public static function refuse_password_login( $user ) {
+		if ( $user instanceof WP_User && self::is_agency_account( $user->ID ) ) {
+			return new WP_Error( 'hop_agency_account', __( 'Ce compte de l’agence s’ouvre seulement depuis l’espace client.', 'hop-connector' ) );
+		}
+
+		return $user;
+	}
+
+	/**
+	 * Delete the agency accounts, when the site leaves the platform. What they
+	 * wrote goes to the oldest administrator who is not one of them; with no
+	 * such administrator, nothing is deleted, so the site keeps an admin.
+	 *
+	 * On a multisite network, deleting a user only takes it off one site, and
+	 * the account would stay on the network: nothing is done there, and the
+	 * journal says so.
+	 *
+	 * @return int How many accounts were deleted.
+	 */
+	public static function remove_agency_accounts() {
+		$accounts = get_users(
+			array(
+				'meta_key' => self::AGENCY_META, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Rare, on disconnection only.
+				'fields'   => 'ID',
+				'blog_id'  => 0,
+			)
+		);
+
+		if ( array() === $accounts ) {
+			return 0;
+		}
+
+		if ( is_multisite() ) {
+			Hop_Connector_Log::record( 'accounts_kept', array( 'note' => __( 'multisite : comptes de l’agence à retirer à la main', 'hop-connector' ) ) );
+
+			return 0;
+		}
+
+		$heir = null;
+
+		$admins = get_users(
 			array(
 				'role'    => 'administrator',
 				'orderby' => 'ID',
 				'order'   => 'ASC',
-				'number'  => 1,
+				'fields'  => 'ID',
 			)
 		);
 
-		return $users ? $users[0] : null;
+		foreach ( $admins as $admin_id ) {
+			if ( ! self::is_agency_account( $admin_id ) ) {
+				$heir = (int) $admin_id;
+				break;
+			}
+		}
+
+		if ( null === $heir ) {
+			Hop_Connector_Log::record( 'accounts_kept', array( 'note' => __( 'aucun autre administrateur pour reprendre les contenus', 'hop-connector' ) ) );
+
+			return 0;
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/user.php';
+
+		$deleted = 0;
+
+		foreach ( $accounts as $account_id ) {
+			if ( wp_delete_user( (int) $account_id, $heir ) ) {
+				++$deleted;
+			}
+		}
+
+		Hop_Connector_Log::record( 'accounts_deleted', array( 'note' => (string) $deleted ) );
+
+		return $deleted;
 	}
 }

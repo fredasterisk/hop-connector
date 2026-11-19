@@ -49,7 +49,7 @@ class Hop_Connector_Cli {
 		}
 
 		if ( 'public_key' === $key['type'] ) {
-			Hop_Connector_Keys::activate( $key['key_id'], array( 'public_key' => $key['public_key'] ) );
+			Hop_Connector_Keys::activate( $key['key_id'], $key['public_key'], 'cli' );
 
 			WP_CLI::success( 'Clé publique de la plateforme enregistrée : le site est appairé.' );
 
@@ -57,6 +57,13 @@ class Hop_Connector_Cli {
 		}
 
 		Hop_Connector_Keys::store_pending( $key['key_id'], $key['secret'] );
+		Hop_Connector_Log::record(
+			'pending_key',
+			array(
+				'key_id' => $key['key_id'],
+				'note'   => 'cli',
+			)
+		);
 
 		WP_CLI::success( 'Jeton enregistré : la plateforme doit le confirmer dans les 15 minutes.' );
 	}

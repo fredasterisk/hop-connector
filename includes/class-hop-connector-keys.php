@@ -13,9 +13,11 @@ defined( 'ABSPATH' ) || exit;
  * The site ends up holding the platform's Ed25519 public key only: reading
  * its database, or a copy of it, gives nothing that can sign a request.
  * A pairing token from the admin screen carries a one-time secret, which the
- * platform replaces with its public key when it confirms the token. Sites
- * paired before version 0.8.0 hold a shared secret until the platform moves
- * them to its public key (offer_public_key(), then drop_secret()).
+ * platform replaces with its public key when it confirms the token.
+ *
+ * Since version 0.15.0, a shared secret never makes an active key: a site
+ * still paired that way (before 0.8.0, and never moved since) shows as not
+ * paired, and is paired again.
  */
 class Hop_Connector_Keys {
 
@@ -91,18 +93,35 @@ class Hop_Connector_Keys {
 	}
 
 	/**
-	 * Active key, or null when the site is not paired.
+	 * Active key, or null when the site is not paired. A key left from a
+	 * pairing by shared secret counts as none.
 	 *
-	 * @return array{key_id:string,secret?:string,public_key?:string,paired_at:int}|null
+	 * @return array{key_id:string,public_key:string,paired_at:int}|null
 	 */
 	public static function active() {
 		$key = get_option( self::OPTION_ACTIVE );
 
-		if ( ! is_array( $key ) || empty( $key['key_id'] ) || ( empty( $key['secret'] ) && empty( $key['public_key'] ) ) ) {
+		if ( ! is_array( $key ) || empty( $key['key_id'] ) || ! self::is_key( $key['public_key'] ?? null ) ) {
 			return null;
 		}
 
-		return $key;
+		return array(
+			'key_id'     => (string) $key['key_id'],
+			'public_key' => (string) $key['public_key'],
+			'paired_at'  => (int) ( $key['paired_at'] ?? 0 ),
+		);
+	}
+
+	/**
+	 * Whether the site still holds a key paired by shared secret, which no
+	 * request can use any more.
+	 *
+	 * @return bool
+	 */
+	public static function has_legacy_secret() {
+		$key = get_option( self::OPTION_ACTIVE );
+
+		return is_array( $key ) && ! empty( $key['secret'] ) && null === self::active();
 	}
 
 	/**
@@ -137,8 +156,8 @@ class Hop_Connector_Keys {
 
 		if ( $active && hash_equals( (string) $active['key_id'], $key_id ) ) {
 			return array(
-				'secret'     => isset( $active['secret'] ) ? (string) $active['secret'] : '',
-				'public_key' => isset( $active['public_key'] ) ? (string) $active['public_key'] : '',
+				'secret'     => '',
+				'public_key' => $active['public_key'],
 				'pending'    => false,
 			);
 		}
@@ -157,103 +176,82 @@ class Hop_Connector_Keys {
 	}
 
 	/**
-	 * Promote the pending key to active key, with the replacement the platform
-	 * sent: its public key, or a new secret from a platform older than the
-	 * connector. Either way, the secret that travelled through a copy-paste or
-	 * a command line stops being valid.
+	 * Promote the pending key to active key, replaced by the platform's public
+	 * key: the secret that travelled through a copy-paste or a command line
+	 * stops being valid. A new secret, as platforms older than 0.8.0 sent, is
+	 * refused.
 	 *
-	 * @param  array{public_key?:mixed,secret?:mixed} $replacement  Values received.
-	 * @return string|null What the site now holds: public_key or secret; null when nothing was promoted.
+	 * @param  mixed $public_key  Public key received.
+	 * @return bool Whether the pending key was promoted.
 	 */
-	public static function promote_pending( array $replacement ) {
+	public static function promote_pending( $public_key ) {
 		$pending = self::pending();
 
-		if ( ! $pending ) {
-			return null;
+		if ( ! $pending || ! self::is_key( $public_key ) ) {
+			return false;
 		}
 
-		foreach ( array( 'public_key', 'secret' ) as $kind ) {
-			if ( isset( $replacement[ $kind ] ) && self::is_key( $replacement[ $kind ] ) ) {
-				self::activate( (string) $pending['key_id'], array( $kind => $replacement[ $kind ] ) );
+		self::activate( (string) $pending['key_id'], (string) $public_key );
 
-				return $kind;
-			}
-		}
-
-		return null;
+		return true;
 	}
 
 	/**
-	 * Make a key the only valid one.
+	 * Make a key the only valid one. When it replaces another, the journal
+	 * keeps it and the site's administrator is told: whoever takes the site
+	 * from the platform cannot do it unseen.
 	 *
-	 * @param  string                $key_id    Key identifier.
-	 * @param  array<string, string> $material  public_key or secret.
+	 * @param  string $key_id      Key identifier.
+	 * @param  string $public_key  Platform public key, 64 hexadecimal characters.
+	 * @param  string $how         How the key came: handshake or cli.
 	 * @return void
 	 */
-	public static function activate( $key_id, array $material ) {
+	public static function activate( $key_id, $public_key, $how = 'handshake' ) {
+		$previous = self::active();
+
 		delete_option( self::OPTION_ACTIVE );
-		add_option( self::OPTION_ACTIVE, array_merge( array( 'key_id' => $key_id ), $material, array( 'paired_at' => time() ) ), '', false );
+		add_option(
+			self::OPTION_ACTIVE,
+			array(
+				'key_id'     => $key_id,
+				'public_key' => $public_key,
+				'paired_at'  => time(),
+			),
+			'',
+			false
+		);
 		delete_option( self::OPTION_PENDING );
-	}
 
-	/**
-	 * First step of the move from a shared secret to the platform's public
-	 * key. The secret keeps working until the platform proves, by a request
-	 * signed with its private key, that it holds the matching key: an answer
-	 * lost on the way cannot cut the site off.
-	 *
-	 * @param  string $public_key  Platform public key, 64 hexadecimal characters.
-	 * @return bool Whether the key was recorded.
-	 */
-	public static function offer_public_key( $public_key ) {
-		$active = self::active();
+		$replaced = $previous && ! hash_equals( $previous['key_id'], (string) $key_id );
 
-		if ( ! $active || empty( $active['secret'] ) || ! self::is_key( $public_key ) ) {
-			return false;
+		Hop_Connector_Log::record(
+			$replaced ? 'key_replaced' : 'paired',
+			array(
+				'key_id' => $key_id,
+				'note'   => $replaced ? $how . ', ' . __( 'clé précédente', 'hop-connector' ) . ' ' . $previous['key_id'] : $how,
+			)
+		);
+
+		if ( $replaced ) {
+			Hop_Connector_Log::notify(
+				__( 'La clé du connecteur a été remplacée', 'hop-connector' ),
+				sprintf(
+					/* translators: 1: previous key identifier, 2: new key identifier. */
+					__( "La clé qui permet à la plateforme d’agir sur ce site vient d’être remplacée (clé %1\$s remplacée par %2\$s). L’ancienne ne fonctionne plus.\n\nSi ce changement n’était pas prévu : déconnecter le site dans Réglages > Connecteur Espace client, puis prévenir l’agence.", 'hop-connector' ),
+					$previous['key_id'],
+					$key_id
+				)
+			);
 		}
-
-		$active['public_key'] = $public_key;
-
-		return update_option( self::OPTION_ACTIVE, $active, false ) || self::active() === $active;
-	}
-
-	/**
-	 * Last step of the move: forget the shared secret.
-	 *
-	 * @return bool Whether the site now holds the public key alone.
-	 */
-	public static function drop_secret() {
-		$active = self::active();
-
-		if ( ! $active || empty( $active['public_key'] ) ) {
-			return false;
-		}
-
-		if ( isset( $active['secret'] ) ) {
-			unset( $active['secret'] );
-			update_option( self::OPTION_ACTIVE, $active, false );
-		}
-
-		return 'ed25519' === self::signing();
 	}
 
 	/**
 	 * How the platform signs its requests to this site.
 	 *
-	 * @return string|null ed25519, hmac, or ed25519_pending while the move from the secret is under way; null when not paired.
+	 * @return string|null ed25519; null when not paired.
 	 */
 	public static function signing() {
-		$active = self::active();
-
-		if ( ! $active ) {
-			return null;
-		}
-
-		if ( empty( $active['public_key'] ) ) {
-			return 'hmac';
-		}
-
-		return empty( $active['secret'] ) ? 'ed25519' : 'ed25519_pending';
+		return self::active() ? 'ed25519' : null;
 	}
 
 	/**

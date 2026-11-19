@@ -109,6 +109,8 @@ class Hop_Connector_Rescue {
 		}
 
 		require_once $dir . 'includes/class-hop-connector-signature.php';
+		require_once $dir . 'includes/class-hop-connector-log.php';
+		require_once $dir . 'includes/class-hop-connector-guard.php';
 		require_once $dir . 'includes/class-hop-connector-keys.php';
 		require_once $dir . 'includes/class-hop-connector-auth.php';
 		require_once $dir . 'includes/class-hop-connector-updater.php';
@@ -126,7 +128,17 @@ class Hop_Connector_Rescue {
 		);
 
 		if ( is_wp_error( $allowed ) ) {
-			self::respond( 401, array( 'code' => $allowed->get_error_code() ) );
+			$data = $allowed->get_error_data();
+
+			// 401 for a request that does not come from the platform, 403 for
+			// one the switches of wp-config.php refuse.
+			self::respond(
+				is_array( $data ) && isset( $data['status'] ) ? (int) $data['status'] : 401,
+				array(
+					'code'    => $allowed->get_error_code(),
+					'message' => $allowed->get_error_message(),
+				)
+			);
 		}
 
 		if ( 'status' === $action ) {

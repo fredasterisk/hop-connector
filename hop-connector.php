@@ -27,6 +27,8 @@ require_once __DIR__ . '/includes/github-updater.php';
 Asterisk_GitHub_Updater::register( __FILE__ );
 
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-signature.php';
+require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-log.php';
+require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-guard.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-keys.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-auth.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-inventory.php';
@@ -45,6 +47,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 
 add_action( 'rest_api_init', array( 'Hop_Connector_Rest', 'register_routes' ) );
 add_action( 'init', array( 'Hop_Connector_Login', 'maybe_consume' ), 1 );
+add_filter( 'allow_password_reset', array( 'Hop_Connector_Login', 'refuse_password_reset' ), 10, 2 );
+// After every other check: a password, a cookie or an application password.
+add_filter( 'authenticate', array( 'Hop_Connector_Login', 'refuse_password_login' ), 100 );
 add_action( 'admin_menu', array( 'Hop_Connector_Admin', 'register_page' ) );
 add_action( 'admin_post_hop_connector_generate', array( 'Hop_Connector_Admin', 'handle_generate' ) );
 add_action( 'admin_post_hop_connector_disconnect', array( 'Hop_Connector_Admin', 'handle_disconnect' ) );
@@ -79,5 +84,7 @@ register_deactivation_hook(
 	static function () {
 		Hop_Connector_Rescue::uninstall();
 		wp_clear_scheduled_hook( 'hop_connector_cleanup' );
+		// The hourly cleanup stops here: copies of the database must not stay behind.
+		Hop_Connector_Database::purge_all();
 	}
 );

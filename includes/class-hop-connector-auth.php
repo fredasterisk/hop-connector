@@ -19,13 +19,6 @@ class Hop_Connector_Auth {
 	const NONCE_TTL = 300;
 
 	/**
-	 * Algorithm that authenticated the current request: ed25519 or hmac.
-	 *
-	 * @var string|null
-	 */
-	private static $algorithm = null;
-
-	/**
 	 * Permission callback for routes that need the active key.
 	 *
 	 * @param  WP_REST_Request $request  Request.
@@ -46,7 +39,8 @@ class Hop_Connector_Auth {
 	}
 
 	/**
-	 * Verify IP allowlist, freshness, signature, then replay protection.
+	 * Verify IP allowlist, freshness, signature, replay protection, then the
+	 * switches of wp-config.php.
 	 *
 	 * Key and signature failures all return the same public error, so a caller
 	 * cannot tell which one rejected the request; the precise reason goes to the
@@ -117,13 +111,14 @@ class Hop_Connector_Auth {
 			return self::deny( 'hop_bad_signature' );
 		}
 
-		// A key holding the public key alone accepts Ed25519 only: no request
-		// can fall back to a secret the site no longer has.
-		if ( '' !== $key['public_key'] && Hop_Connector_Signature::verify_ed25519( $signature, $key['public_key'], $method, $route, $timestamp, $nonce, $key_id, $body ) ) {
-			$algorithm = 'ed25519';
-		} elseif ( '' !== $key['secret'] && Hop_Connector_Signature::verify( $signature, $key['secret'], $method, $route, $timestamp, $nonce, $key_id, $body ) ) {
-			$algorithm = 'hmac';
-		} else {
+		// The active key is the platform's public key: Ed25519 only. The shared
+		// secret survives only in a pending key, for the handshake that
+		// replaces it with that public key within 15 minutes.
+		$signed = $key['pending']
+			? Hop_Connector_Signature::verify( $signature, $key['secret'], $method, $route, $timestamp, $nonce, $key_id, $body )
+			: Hop_Connector_Signature::verify_ed25519( $signature, $key['public_key'], $method, $route, $timestamp, $nonce, $key_id, $body );
+
+		if ( ! $signed ) {
 			return self::deny( 'hop_bad_signature' );
 		}
 
@@ -131,18 +126,35 @@ class Hop_Connector_Auth {
 			return self::deny( 'hop_replay' );
 		}
 
-		self::$algorithm = $algorithm;
+		// Checked once the request is known to come from the platform: the
+		// switches of wp-config.php are no business of anyone else.
+		$refusal = Hop_Connector_Guard::refusal( $route );
+
+		if ( null !== $refusal ) {
+			Hop_Connector_Log::record(
+				'denied',
+				array(
+					'route'  => $route,
+					'key_id' => $key_id,
+					'result' => 'denied',
+				)
+			);
+
+			return $refusal;
+		}
+
+		if ( Hop_Connector_Guard::journaled( $route, $body ) ) {
+			Hop_Connector_Log::record(
+				'request',
+				array(
+					'route'  => $route,
+					'key_id' => $key_id,
+					'result' => 'accepted',
+				)
+			);
+		}
 
 		return true;
-	}
-
-	/**
-	 * Algorithm that authenticated the current request.
-	 *
-	 * @return string|null ed25519 or hmac; null before a request passed verify().
-	 */
-	public static function algorithm() {
-		return self::$algorithm;
 	}
 
 	/**
