@@ -145,7 +145,7 @@ class Hop_Connector_Login {
 			__( 'Un compte administrateur a été créé pour l’agence', 'hop-connector' ),
 			sprintf(
 				/* translators: 1: login name, 2: email address. */
-				__( "Le Connecteur Espace client vient de créer le compte administrateur %1\$s (%2\$s), pour un membre de l’agence qui se connecte depuis la plateforme.\n\nCe compte n’accepte ni mot de passe ni réinitialisation : il n’ouvre que par la plateforme. Il est supprimé quand le site est déconnecté.\n\nSi cette création n’était pas prévue : déconnecter le site dans Réglages > Connecteur Espace client, puis prévenir l’agence.", 'hop-connector' ),
+				__( "Le Connecteur Espace client vient de créer le compte administrateur %1\$s (%2\$s), pour un membre de l’agence qui se connecte depuis la plateforme.\n\nCe compte n’accepte ni mot de passe ni réinitialisation : il n’ouvre que par la plateforme. Il est supprimé quand le site est déconnecté.\n\nSi cette création n’était pas prévue : déconnecter le site dans Réglages > Espace client, puis prévenir l’agence.", 'hop-connector' ),
 				$login,
 				$email
 			)

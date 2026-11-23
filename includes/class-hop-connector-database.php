@@ -530,7 +530,7 @@ class Hop_Connector_Database {
 				__( 'La base de données a été restaurée', 'hop-connector' ),
 				sprintf(
 					/* translators: %s: identifier of the copy. */
-					__( "La base de données de ce site vient d’être remise dans l’état de la copie %s, à la demande de la plateforme. Ce qui a été écrit dans le site depuis cette copie n’y est plus.\n\nSi cette restauration n’était pas prévue : déconnecter le site dans Réglages > Connecteur Espace client, puis prévenir l’agence.", 'hop-connector' ),
+					__( "La base de données de ce site vient d’être remise dans l’état de la copie %s, à la demande de la plateforme. Ce qui a été écrit dans le site depuis cette copie n’y est plus.\n\nSi cette restauration n’était pas prévue : déconnecter le site dans Réglages > Espace client, puis prévenir l’agence.", 'hop-connector' ),
 					$job['backup_id']
 				)
 			);

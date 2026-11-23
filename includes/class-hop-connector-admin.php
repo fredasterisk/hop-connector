@@ -9,7 +9,7 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Settings page under Settings > Connecteur Espace client.
+ * Settings page under Settings > Espace client.
  */
 class Hop_Connector_Admin {
 
@@ -25,7 +25,7 @@ class Hop_Connector_Admin {
 	public static function register_page() {
 		add_options_page(
 			__( 'Connecteur Espace client', 'hop-connector' ),
-			__( 'Connecteur Espace client', 'hop-connector' ),
+			__( 'Espace client', 'hop-connector' ),
 			self::capability(),
 			self::PAGE,
 			array( __CLASS__, 'render' )

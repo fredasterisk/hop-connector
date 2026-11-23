@@ -237,7 +237,7 @@ class Hop_Connector_Keys {
 				__( 'La clé du connecteur a été remplacée', 'hop-connector' ),
 				sprintf(
 					/* translators: 1: previous key identifier, 2: new key identifier. */
-					__( "La clé qui permet à la plateforme d’agir sur ce site vient d’être remplacée (clé %1\$s remplacée par %2\$s). L’ancienne ne fonctionne plus.\n\nSi ce changement n’était pas prévu : déconnecter le site dans Réglages > Connecteur Espace client, puis prévenir l’agence.", 'hop-connector' ),
+					__( "La clé qui permet à la plateforme d’agir sur ce site vient d’être remplacée (clé %1\$s remplacée par %2\$s). L’ancienne ne fonctionne plus.\n\nSi ce changement n’était pas prévu : déconnecter le site dans Réglages > Espace client, puis prévenir l’agence.", 'hop-connector' ),
 					$previous['key_id'],
 					$key_id
 				)
