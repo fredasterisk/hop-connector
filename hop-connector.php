@@ -9,7 +9,7 @@
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       hop-connector
- * Update URI:        https://github.com/fredasterisk/hop-connector
+ * Update URI:        https://client.fredrobert.com/connector/
  *
  * @package Hop_Connector
  */
@@ -23,14 +23,11 @@ if ( ! defined( 'HOP_CONNECTOR_VERSION' ) ) {
 define( 'HOP_CONNECTOR_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HOP_CONNECTOR_FILE', __FILE__ );
 
-// Mises à jour en un clic depuis les releases GitHub.
-require_once __DIR__ . '/includes/github-updater.php';
-Asterisk_GitHub_Updater::register( __FILE__ );
-
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-signature.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-log.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-guard.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-release.php';
+require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-self-update.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-keys.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-auth.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-inventory.php';
@@ -50,6 +47,8 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 // After the updater has renamed the extracted folder (priority 10).
 add_filter( 'upgrader_pre_install', array( 'Hop_Connector_Release', 'remember_state' ), 5, 2 );
 add_filter( 'upgrader_source_selection', array( 'Hop_Connector_Release', 'check_update' ), 20, 4 );
+// New versions of the connector, served by the platform.
+Hop_Connector_Self_Update::register();
 add_action( 'rest_api_init', array( 'Hop_Connector_Rest', 'register_routes' ) );
 add_action( 'init', array( 'Hop_Connector_Login', 'maybe_consume' ), 1 );
 add_filter( 'allow_password_reset', array( 'Hop_Connector_Login', 'refuse_password_reset' ), 10, 2 );

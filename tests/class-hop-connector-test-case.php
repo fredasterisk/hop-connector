@@ -31,6 +31,46 @@ abstract class Hop_Connector_Test_Case extends WP_UnitTestCase {
 		$this->platform_keypair = sodium_crypto_sign_keypair();
 
 		rest_get_server();
+
+		// The tests never reach the network: WordPress.org answers that it knows
+		// of no update, and any other address fails.
+		add_filter( 'pre_http_request', array( $this, 'no_network' ), 99, 3 );
+	}
+
+	/**
+	 * Answer for every request no test answered.
+	 *
+	 * @param  false|array|WP_Error $preempt  Answer so far.
+	 * @param  array                $args     Request arguments.
+	 * @param  string               $url      Address.
+	 * @return array|WP_Error
+	 */
+	public function no_network( $preempt, $args, $url ) {
+		if ( false !== $preempt ) {
+			return $preempt;
+		}
+
+		if ( 'api.wordpress.org' === wp_parse_url( $url, PHP_URL_HOST ) ) {
+			return array(
+				'headers'  => array( 'content-type' => 'application/json' ),
+				'body'     => (string) wp_json_encode(
+					array(
+						'plugins'      => array(),
+						'themes'       => array(),
+						'translations' => array(),
+						'no_update'    => array(),
+						'offers'       => array(),
+					)
+				),
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+			);
+		}
+
+		return new WP_Error( 'http_request_failed', 'Pas de réseau dans les tests : ' . $url );
 	}
 
 	public function tear_down() {

@@ -58,6 +58,7 @@ delete_option( 'hop_connector_backup_parent' );
 delete_option( 'hop_connector_last_fatal' );
 delete_option( 'hop_connector_log' );
 delete_option( 'hop_connector_rate_login' );
+delete_site_transient( 'hop_connector_latest' );
 
 if ( file_exists( WPMU_PLUGIN_DIR . '/hop-connector-rescue.php' ) ) {
 	wp_delete_file( WPMU_PLUGIN_DIR . '/hop-connector-rescue.php' );

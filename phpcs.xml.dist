@@ -11,9 +11,6 @@
 	<!-- Tests follow PHPUnit's naming, not WordPress's. -->
 	<exclude-pattern>tests/*</exclude-pattern>
 
-	<!-- Shared file, copied as is from its reference. -->
-	<exclude-pattern>includes/github-updater.php</exclude-pattern>
-
 	<arg name="extensions" value="php"/>
 	<arg value="sp"/>
 

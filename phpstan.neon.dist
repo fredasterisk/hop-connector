@@ -5,14 +5,10 @@ parameters:
 		- hop-connector.php
 		- uninstall.php
 		- includes
-	excludePaths:
-		# Shared file, copied as is from its reference.
-		- includes/github-updater.php
 	bootstrapFiles:
 		- tests/phpstan-constants.php
 	scanFiles:
 		- vendor/php-stubs/wp-cli-stubs/wp-cli-stubs.php
-		- includes/github-updater.php
 	dynamicConstantNames:
 		- HOP_CONNECTOR_DENY
 		- HOP_CONNECTOR_DISABLED

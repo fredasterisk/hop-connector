@@ -35,6 +35,7 @@ class Hop_Connector_Updater {
 
 		wp_clean_plugins_cache( true );
 		wp_clean_themes_cache( true );
+		Hop_Connector_Self_Update::forget();
 		wp_version_check( array(), true );
 		wp_update_plugins();
 		wp_update_themes();
