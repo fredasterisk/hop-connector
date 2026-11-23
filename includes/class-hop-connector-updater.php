@@ -52,7 +52,9 @@ class Hop_Connector_Updater {
 	public static function apply( $type, $slug, $expected_from, $expected_to ) {
 		self::load_admin();
 
-		if ( ! self::acquire_lock() ) {
+		$held = self::acquire_lock();
+
+		if ( false === $held ) {
 			return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'hop-connector' ), array( 'status' => 409 ) );
 		}
 
@@ -72,7 +74,8 @@ class Hop_Connector_Updater {
 					return self::apply_core( $expected_from, $expected_to );
 			}
 		} finally {
-			delete_option( self::OPTION_LOCK );
+			// Past its time, the nightly copy may hold the lock by now.
+			self::release_lock( $held );
 		}
 	}
 
@@ -100,7 +103,9 @@ class Hop_Connector_Updater {
 			return new WP_Error( 'hop_forbidden', __( 'Le connecteur ne peut pas agir sur lui-même.', 'hop-connector' ), array( 'status' => 403 ) );
 		}
 
-		if ( ! self::acquire_lock() ) {
+		$held = self::acquire_lock();
+
+		if ( false === $held ) {
 			return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'hop-connector' ), array( 'status' => 409 ) );
 		}
 
@@ -163,7 +168,7 @@ class Hop_Connector_Updater {
 				'backup_id' => $backup_id,
 			);
 		} finally {
-			delete_option( self::OPTION_LOCK );
+			self::release_lock( $held );
 		}
 	}
 
@@ -553,26 +558,26 @@ class Hop_Connector_Updater {
 	 * The folder above WordPress, if the web server does not serve it and the
 	 * site may write there.
 	 *
-	 * @param  string $public  Public folder of the web server.
+	 * @param  string $public_folder  Public folder of the web server.
 	 * @return string|null
 	 */
-	private static function above_public_folder( $public ) {
+	private static function above_public_folder( $public_folder ) {
 		// Hosts that restrict PHP to the site's folder (open_basedir) refuse to look higher.
 		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- See above.
-		$public = @realpath( $public );
+		$public_folder = @realpath( $public_folder );
 		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- See above.
 		$above = @realpath( dirname( ABSPATH ) );
 
-		if ( ! $public || ! $above ) {
+		if ( ! $public_folder || ! $above ) {
 			return null;
 		}
 
-		$public = trailingslashit( wp_normalize_path( $public ) );
-		$above  = trailingslashit( wp_normalize_path( $above ) );
+		$public_folder = trailingslashit( wp_normalize_path( $public_folder ) );
+		$above         = trailingslashit( wp_normalize_path( $above ) );
 
 		// Neither the public folder itself, nor anything inside it, nor the
 		// root of the disk.
-		if ( 0 === strpos( $above, $public ) || 1 === preg_match( '#^([A-Za-z]:)?/$#', $above ) ) {
+		if ( 0 === strpos( $above, $public_folder ) || 1 === preg_match( '#^([A-Za-z]:)?/$#', $above ) ) {
 			return null;
 		}
 

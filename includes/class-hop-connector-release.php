@@ -130,9 +130,10 @@ class Hop_Connector_Release {
 			return self::refuse( 'hop_release_unsigned', __( 'Cette version du connecteur n’est pas signée : elle n’est pas installée.', 'hop-connector' ) );
 		}
 
-		$key_id    = isset( $envelope['key'] ) ? (string) $envelope['key'] : '';
+		$key_id = isset( $envelope['key'] ) ? (string) $envelope['key'] : '';
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes a signature, never code.
 		$signature = isset( $envelope['signature'] ) ? base64_decode( (string) $envelope['signature'], true ) : false;
-		$keys      = self::KEYS;
+		$keys      = static::keys();
 
 		if ( ! isset( $keys[ $key_id ] ) || false === $signature || ! self::signed( $manifest, $signature, $keys[ $key_id ] ) ) {
 			return self::refuse( 'hop_release_bad_signature', __( 'La signature de cette version du connecteur ne vient pas de l’agence : elle n’est pas installée.', 'hop-connector' ) );
@@ -170,7 +171,7 @@ class Hop_Connector_Release {
 			}
 		}
 
-		if ( $version !== self::header_version( $folder . '/hop-connector.php' ) ) {
+		if ( self::header_version( $folder . '/hop-connector.php' ) !== $version ) {
 			return self::refuse( 'hop_release_bad_manifest', __( 'La version signée ne correspond pas à celle de l’extension : elle n’est pas installée.', 'hop-connector' ) );
 		}
 
@@ -178,6 +179,16 @@ class Hop_Connector_Release {
 			'version' => $version,
 			'key'     => $key_id,
 		);
+	}
+
+	/**
+	 * Public keys allowed to sign a release. A method, so the tests can check
+	 * the same code with a key they hold; nothing in WordPress can change it.
+	 *
+	 * @return array<string, string>
+	 */
+	protected static function keys() {
+		return self::KEYS;
 	}
 
 	/**
@@ -224,6 +235,7 @@ class Hop_Connector_Release {
 	 * @return bool
 	 */
 	private static function signed( $message, $signature, $public_key ) {
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes a public key, never code.
 		$key = base64_decode( $public_key, true );
 
 		if ( false === $key || SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES !== strlen( $key ) || SODIUM_CRYPTO_SIGN_BYTES !== strlen( $signature ) ) {

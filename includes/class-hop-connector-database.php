@@ -57,6 +57,14 @@ class Hop_Connector_Database {
 	const LOCK_SECONDS = 10 * MINUTE_IN_SECONDS;
 
 	/**
+	 * Seconds of one step. A property, so the tests can stop each step after
+	 * its first batch; nothing in WordPress can change it.
+	 *
+	 * @var int
+	 */
+	private static $step_seconds = self::STEP_SECONDS;
+
+	/**
 	 * Most bytes of a copy sent in one answer.
 	 */
 	const CHUNK = 8 * MB_IN_BYTES;
@@ -176,7 +184,7 @@ class Hop_Connector_Database {
 		self::extend_time();
 
 		$part     = self::part_path( $root, $snapshot_id );
-		$deadline = microtime( true ) + self::STEP_SECONDS;
+		$deadline = microtime( true ) + self::$step_seconds;
 		$count    = count( $job['tables'] );
 
 		try {
@@ -253,8 +261,8 @@ class Hop_Connector_Database {
 	/**
 	 * Turn a finished part into a copy.
 	 *
-	 * @param  string                                   $root         Backup directory.
-	 * @param  string                                   $snapshot_id  Identifier.
+	 * @param  string                                                  $root         Backup directory.
+	 * @param  string                                                  $snapshot_id  Identifier.
 	 * @param  array{tables: list<string>, rows: int, held: int|false} $job  Progress.
 	 * @return array<string,mixed>|WP_Error
 	 */
@@ -434,7 +442,7 @@ class Hop_Connector_Database {
 		self::extend_time();
 
 		$sql      = $root . '/' . $restore_id . '.sql';
-		$deadline = microtime( true ) + self::STEP_SECONDS;
+		$deadline = microtime( true ) + self::$step_seconds;
 		$done     = false;
 		// A statement that fails must stop the restoration, not be skipped silently.
 		$previous = $wpdb->suppress_errors( true );
@@ -564,8 +572,8 @@ class Hop_Connector_Database {
 	 * The statements that recreate one table: under a temporary name, or in
 	 * place for a table tied by a foreign key.
 	 *
-	 * @param  string                                                $drop    DROP TABLE line of the copy.
-	 * @param  string                                                $create  CREATE TABLE line that follows it.
+	 * @param  string                                                  $drop    DROP TABLE line of the copy.
+	 * @param  string                                                  $create  CREATE TABLE line that follows it.
 	 * @param  array{in_place: list<string>, swaps: array<string,int>} $job   Restoration; gains the table's swap.
 	 * @return list<string>
 	 * @throws RuntimeException When the table name is unusual.
@@ -633,7 +641,7 @@ class Hop_Connector_Database {
 		foreach ( $swaps as $table => $number ) {
 			if ( self::table_exists( $table ) ) {
 				$old[] = self::temporary_name( $number, 'o' );
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Name built from a number.
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.NotPrepared -- Name built from a number.
 				$wpdb->query( 'DROP TABLE IF EXISTS `' . end( $old ) . '`' );
 				$renames[] = "`{$table}` TO `" . end( $old ) . '`';
 			}
@@ -660,8 +668,8 @@ class Hop_Connector_Database {
 	 * Drop a restoration that failed: its temporary tables, its files and its lock.
 	 * Tables already replaced in place stay as they are now.
 	 *
-	 * @param  string                                       $root        Backup directory.
-	 * @param  string                                       $restore_id  Identifier.
+	 * @param  string                                           $root        Backup directory.
+	 * @param  string                                           $restore_id  Identifier.
 	 * @param  array{swaps: array<string,int>, held: int|false} $job     Restoration.
 	 * @return void
 	 */
@@ -669,7 +677,7 @@ class Hop_Connector_Database {
 		global $wpdb;
 
 		foreach ( $job['swaps'] as $number ) {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Name built from a number.
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.NotPrepared -- Name built from a number.
 			$wpdb->query( 'DROP TABLE IF EXISTS `' . self::temporary_name( $number, 'r' ) . '`' );
 		}
 
@@ -902,7 +910,7 @@ class Hop_Connector_Database {
 	private static function write_structure( $file, $table ) {
 		global $wpdb;
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names come from SHOW TABLES.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Reads the structure; table names come from SHOW TABLES.
 		$create = $wpdb->get_row( "SHOW CREATE TABLE `{$table}`", ARRAY_N );
 
 		if ( ! is_array( $create ) || ! isset( $create[1] ) ) {
@@ -1001,7 +1009,7 @@ class Hop_Connector_Database {
 		}
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from SHOW TABLES.
-		$columns = (array) $wpdb->get_results( "SHOW KEYS FROM `{$table}` WHERE Key_name = 'PRIMARY'", ARRAY_A );
+		$columns        = (array) $wpdb->get_results( "SHOW KEYS FROM `{$table}` WHERE Key_name = 'PRIMARY'", ARRAY_A );
 		$keys[ $table ] = null;
 
 		if ( 1 !== count( $columns ) || ! is_string( $columns[0]['Column_name'] ?? null ) || ! self::is_safe_name( $columns[0]['Column_name'] ) ) {
@@ -1037,6 +1045,7 @@ class Hop_Connector_Database {
 		$value = (string) $value;
 
 		if ( $wpdb->dbh instanceof mysqli ) {
+			// phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_real_escape_string -- Escapes a value for the copy, on WordPress's own connection.
 			return "'" . mysqli_real_escape_string( $wpdb->dbh, $value ) . "'";
 		}
 

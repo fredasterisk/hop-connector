@@ -1,0 +1,91 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: phpcs et PHPStan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Dépendances
+        run: composer update --no-interaction --no-progress
+
+      - name: phpcs
+        run: vendor/bin/phpcs -q
+
+      - name: PHPStan
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+  tests:
+    name: PHP ${{ matrix.php }}, WordPress ${{ matrix.wordpress }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Les minimums annoncés dans l'en-tête de l'extension.
+          - php: '7.4'
+            wordpress: '6.5'
+          - php: '8.4'
+            wordpress: 'latest'
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: hop_connector_tests
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      WP_TESTS_DB_HOST: 127.0.0.1:3306
+      WP_TESTS_DB_USER: root
+      WP_TESTS_DB_PASSWORD: ''
+      WP_TESTS_DB_NAME: hop_connector_tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mysqli, sodium, zip
+          coverage: none
+
+      - name: Dépendances
+        run: composer update --no-interaction --no-progress
+
+      - name: WordPress ${{ matrix.wordpress }}
+        if: matrix.wordpress != 'latest'
+        run: >-
+          composer require --dev --no-interaction --no-progress -W
+          "roots/wordpress-no-content:~${{ matrix.wordpress }}.0"
+          "wp-phpunit/wp-phpunit:~${{ matrix.wordpress }}.0"
+
+      - name: Tests
+        run: vendor/bin/phpunit

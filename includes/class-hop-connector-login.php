@@ -168,8 +168,11 @@ class Hop_Connector_Login {
 		$base  = '' !== $base ? $base : 'agence';
 		$login = $base;
 
-		for ( $suffix = 2; username_exists( $login ); ++$suffix ) {
+		$suffix = 2;
+
+		while ( username_exists( $login ) ) {
 			$login = $base . '-' . $suffix;
+			++$suffix;
 		}
 
 		return $login;
