@@ -56,6 +56,7 @@ delete_option( 'hop_connector_backups' );
 delete_option( 'hop_connector_backup_dir' );
 delete_option( 'hop_connector_backup_parent' );
 delete_option( 'hop_connector_last_fatal' );
+delete_option( 'hop_connector_copying' );
 delete_option( 'hop_connector_log' );
 delete_option( 'hop_connector_rate_login' );
 delete_site_transient( 'hop_connector_latest' );

@@ -21,12 +21,29 @@ class Hop_Connector_Rescue {
 	const OPTION_FATAL = 'hop_connector_last_fatal';
 
 	/**
+	 * Until when an update is replacing files: a Unix time, set by
+	 * Hop_Connector_Updater around the copy only.
+	 */
+	const OPTION_COPYING = 'hop_connector_copying';
+
+	/**
 	 * Called by the must-use loader on every request.
 	 *
 	 * @return void
 	 */
 	public static function boot() {
 		register_shutdown_function( array( __CLASS__, 'record_fatal' ) );
+
+		// The cron ignores the maintenance mode: while an update replaces the
+		// files of a plugin, it would load half of them. It runs again next
+		// minute, on whole files.
+		if ( self::is_cron( wp_doing_cron(), defined( 'WP_CLI' ) && WP_CLI, isset( $GLOBALS['argv'] ) ? (array) $GLOBALS['argv'] : array() ) && self::files_being_replaced() ) {
+			if ( class_exists( 'WP_CLI' ) ) {
+				WP_CLI::log( 'Une mise à jour remplace des fichiers : le cron attend son prochain passage.' );
+			}
+
+			exit;
+		}
 
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Authenticated by the request signature.
 		if ( isset( $_GET[ self::QUERY_VAR ] ) ) {
@@ -68,6 +85,45 @@ class Hop_Connector_Rescue {
 			// Nothing more can be done from a shutdown handler.
 			unset( $exception );
 		}
+	}
+
+	/**
+	 * Whether this process runs the cron: wp-cron.php, or « wp cron event run »
+	 * (the command Forge runs every minute).
+	 *
+	 * @param  bool              $doing_cron  Whether wp-cron.php runs this process.
+	 * @param  bool              $wp_cli      Whether WP-CLI runs this process.
+	 * @param  array<int, mixed> $argv        Command-line arguments.
+	 * @return bool
+	 */
+	public static function is_cron( $doing_cron, $wp_cli, array $argv ) {
+		if ( $doing_cron ) {
+			return true;
+		}
+
+		if ( ! $wp_cli ) {
+			return false;
+		}
+
+		$words = array();
+
+		foreach ( array_slice( $argv, 1 ) as $argument ) {
+			if ( is_string( $argument ) && '' !== $argument && '-' !== $argument[0] ) {
+				$words[] = $argument;
+			}
+		}
+
+		return array( 'cron', 'event', 'run' ) === array_slice( $words, 0, 3 );
+	}
+
+	/**
+	 * Whether an update is replacing files right now. A mark left by a request
+	 * that died expires on its own.
+	 *
+	 * @return bool
+	 */
+	public static function files_being_replaced() {
+		return (int) get_option( self::OPTION_COPYING, 0 ) >= time();
 	}
 
 	/**

@@ -211,13 +211,19 @@ class Hop_Connector_Updater {
 
 		// A failed update can leave the site in maintenance mode.
 		$filesystem->delete( ABSPATH . '.maintenance' );
-		$filesystem->delete( $target, true );
 
-		if ( ! wp_mkdir_p( $target ) ) {
-			return new WP_Error( 'hop_rollback_failed', __( 'Impossible de recréer le dossier.', 'hop-connector' ), array( 'status' => 500 ) );
-		}
+		// From the removal of the folder to the end of the copy.
+		$copied = self::while_copying(
+			function () use ( $filesystem, $backup, $target ) {
+				$filesystem->delete( $target, true );
 
-		$copied = copy_dir( $backup['path'], $target );
+				if ( ! wp_mkdir_p( $target ) ) {
+					return new WP_Error( 'hop_rollback_failed', __( 'Impossible de recréer le dossier.', 'hop-connector' ) );
+				}
+
+				return copy_dir( $backup['path'], $target );
+			}
+		);
 
 		if ( is_wp_error( $copied ) ) {
 			return new WP_Error( 'hop_rollback_failed', $copied->get_error_message(), array( 'status' => 500 ) );
@@ -271,7 +277,11 @@ class Hop_Connector_Updater {
 		$skin     = new Automatic_Upgrader_Skin();
 		$upgrader = new Plugin_Upgrader( $skin );
 		$copy     = array( 'copy_started_at' => microtime( true ) );
-		$results  = $upgrader->bulk_upgrade( array( $file ) );
+		$results  = self::while_copying(
+			function () use ( $upgrader, $file ) {
+				return $upgrader->bulk_upgrade( array( $file ) );
+			}
+		);
 		$result   = is_array( $results ) && isset( $results[ $file ] ) ? $results[ $file ] : false;
 
 		$copy['copy_finished_at'] = microtime( true );
@@ -318,7 +328,11 @@ class Hop_Connector_Updater {
 		$skin     = new Automatic_Upgrader_Skin();
 		$upgrader = new Theme_Upgrader( $skin );
 		$copy     = array( 'copy_started_at' => microtime( true ) );
-		$results  = $upgrader->bulk_upgrade( array( $slug ) );
+		$results  = self::while_copying(
+			function () use ( $upgrader, $slug ) {
+				return $upgrader->bulk_upgrade( array( $slug ) );
+			}
+		);
 		$result   = is_array( $results ) && isset( $results[ $slug ] ) ? $results[ $slug ] : false;
 
 		$copy['copy_finished_at'] = microtime( true );
@@ -353,7 +367,11 @@ class Hop_Connector_Updater {
 		$skin     = new Automatic_Upgrader_Skin();
 		$upgrader = new Core_Upgrader( $skin );
 		$copy     = array( 'copy_started_at' => microtime( true ) );
-		$result   = $upgrader->upgrade( $update );
+		$result   = self::while_copying(
+			function () use ( $upgrader, $update ) {
+				return $upgrader->upgrade( $update );
+			}
+		);
 
 		$copy['copy_finished_at'] = microtime( true );
 
@@ -664,6 +682,24 @@ class Hop_Connector_Updater {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Run what replaces files, with the cron kept out meanwhile (see
+	 * Hop_Connector_Rescue::boot()). The nightly copy, which only reads, does
+	 * not set this mark.
+	 *
+	 * @param  callable $copy  What replaces the files.
+	 * @return mixed What it returns.
+	 */
+	private static function while_copying( callable $copy ) {
+		update_option( Hop_Connector_Rescue::OPTION_COPYING, time() + self::LOCK_TTL, false );
+
+		try {
+			return $copy();
+		} finally {
+			delete_option( Hop_Connector_Rescue::OPTION_COPYING );
+		}
 	}
 
 	/**

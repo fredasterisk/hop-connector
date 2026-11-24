@@ -70,6 +70,51 @@ class UpdaterTest extends Hop_Connector_Test_Case {
 		$this->assertSame( '1.0.0', $this->installed_version() );
 	}
 
+	public function test_the_cron_is_kept_out_while_the_files_are_replaced_only() {
+		$seen = array();
+
+		add_filter(
+			'upgrader_pre_install',
+			static function ( $response ) use ( &$seen ) {
+				$seen[] = Hop_Connector_Rescue::files_being_replaced();
+
+				return $response;
+			}
+		);
+
+		$result = Hop_Connector_Updater::apply( 'plugin', self::SLUG, '1.0.0', '1.1.0' );
+
+		$this->assertSame( 'updated', $result['status'] );
+		$this->assertSame( array( true ), $seen );
+		$this->assertFalse( Hop_Connector_Rescue::files_being_replaced() );
+
+		$seen = array();
+		Hop_Connector_Updater::rollback( $result['backup_id'] );
+
+		$this->assertFalse( Hop_Connector_Rescue::files_being_replaced() );
+		$this->assertSame( '1.0.0', $this->installed_version() );
+	}
+
+	public function test_the_mark_goes_even_when_the_copy_fails() {
+		add_filter(
+			'upgrader_pre_install',
+			static function () {
+				return new WP_Error( 'disk_full', 'Disque plein' );
+			}
+		);
+
+		$level  = ob_get_level();
+		$result = Hop_Connector_Updater::apply( 'plugin', self::SLUG, '1.0.0', '1.1.0' );
+
+		// On a failed copy, the upgrader of WordPress leaves its output buffer open.
+		while ( ob_get_level() > $level ) {
+			ob_end_clean();
+		}
+
+		$this->assertSame( 'failed', $result['status'] );
+		$this->assertFalse( Hop_Connector_Rescue::files_being_replaced() );
+	}
+
 	public function test_nothing_is_touched_when_the_versions_are_not_the_expected_ones() {
 		$result = Hop_Connector_Updater::apply( 'plugin', self::SLUG, '0.9.0', '1.1.0' );
 
