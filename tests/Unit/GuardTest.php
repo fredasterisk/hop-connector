@@ -37,7 +37,7 @@ class GuardTest extends Fred_Espace_Client_Test_Case {
 		define( 'FRED_ESPACE_CLIENT_DISABLED', true );
 		$this->pair();
 
-		$response = $this->dispatch( $this->signed_request( 'GET', '/hop/v1/status' ) );
+		$response = $this->dispatch( $this->signed_request( 'GET', '/fred-espace-client/v1/status' ) );
 
 		$this->assertSame( 403, $response->get_status() );
 		$this->assertSame( 'hop_action_denied', $response->as_error()->get_error_code() );
@@ -51,17 +51,19 @@ class GuardTest extends Fred_Espace_Client_Test_Case {
 		define( 'FRED_ESPACE_CLIENT_DENY', 'login' );
 		$this->pair();
 
-		$response = $this->dispatch( $this->signed_request( 'POST', '/hop/v1/login-token', array( 'email' => 'agence@example.org' ) ) );
+		$response = $this->dispatch( $this->signed_request( 'POST', '/fred-espace-client/v1/login-token', array( 'email' => 'agence@example.org' ) ) );
 
 		$this->assertSame( 403, $response->get_status() );
 		$this->assertSame( 'login', $response->as_error()->get_error_data()['action'] );
 	}
 
 	public function test_every_route_that_changes_the_site_has_an_action() {
-		$reading = array( '/hop/v1/handshake', '/hop/v1/status', '/hop/v1/inventory', '/hop/v1/updates/refresh' );
+		$reading = array( '/fred-espace-client/v1/handshake', '/fred-espace-client/v1/status', '/fred-espace-client/v1/inventory', '/fred-espace-client/v1/updates/refresh' );
 
-		foreach ( array_keys( rest_get_server()->get_routes( 'hop/v1' ) ) as $route ) {
-			if ( '/hop/v1' === $route || in_array( $route, $reading, true ) ) {
+		$this->assertNotEmpty( rest_get_server()->get_routes( 'fred-espace-client/v1' ) );
+
+		foreach ( array_keys( rest_get_server()->get_routes( 'fred-espace-client/v1' ) ) as $route ) {
+			if ( '/fred-espace-client/v1' === $route || in_array( $route, $reading, true ) ) {
 				continue;
 			}
 

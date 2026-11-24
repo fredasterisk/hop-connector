@@ -89,7 +89,7 @@ class DatabaseTest extends Fred_Espace_Client_Test_Case {
 
 		wp_cache_flush();
 		$this->assertSame( self::KEY_ID, Fred_Espace_Client_Keys::active()['key_id'] );
-		$this->assertSame( 200, $this->dispatch( $this->signed_request( 'GET', '/hop/v1/status' ) )->get_status() );
+		$this->assertSame( 200, $this->dispatch( $this->signed_request( 'GET', '/fred-espace-client/v1/status' ) )->get_status() );
 	}
 
 	public function test_a_key_revoked_after_the_copy_stays_revoked() {

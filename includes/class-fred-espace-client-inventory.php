@@ -13,6 +13,27 @@ defined( 'ABSPATH' ) || exit;
 class Fred_Espace_Client_Inventory {
 
 	/**
+	 * What this connector can do, as the platform asks it. A capability is
+	 * added, never renamed; one taken away is a new major version of the API.
+	 * See docs/api.md.
+	 *
+	 * @var list<string>
+	 */
+	const CAPABILITIES = array(
+		'ed25519',
+		'plugins_state',
+		'database_snapshot',
+		'database_steps',
+		'restore_steps',
+		'pull',
+		'rescue',
+		'rollback',
+		'login_token',
+		'self_update',
+		'cron_waits',
+	);
+
+	/**
 	 * Lightweight site status.
 	 *
 	 * @return array<string,mixed>
@@ -20,6 +41,10 @@ class Fred_Espace_Client_Inventory {
 	public static function status() {
 		return array(
 			'connector_version' => FRED_ESPACE_CLIENT_VERSION,
+			// Where the platform speaks to this connector, and what it can do: the
+			// platform decides by capability, not by version.
+			'api'               => Fred_Espace_Client_Rest::REST_NAMESPACE,
+			'capabilities'      => self::CAPABILITIES,
 			'wp_version'        => get_bloginfo( 'version' ),
 			'php_version'       => PHP_VERSION,
 			'site_url'          => home_url(),

@@ -54,9 +54,9 @@ class PredecessorTest extends Fred_Espace_Client_Test_Case {
 
 		// The allowlist came along: only its address passes.
 		$_SERVER['REMOTE_ADDR'] = '203.0.113.9';
-		$this->assertSame( 'hop_ip_denied', $this->dispatch( $this->signed_request( 'GET', '/hop/v1/status' ) )->as_error()->get_error_code() );
+		$this->assertSame( 'hop_ip_denied', $this->dispatch( $this->signed_request( 'GET', '/fred-espace-client/v1/status' ) )->as_error()->get_error_code() );
 		$_SERVER['REMOTE_ADDR'] = '198.51.100.7';
-		$this->assertSame( 200, $this->dispatch( $this->signed_request( 'GET', '/hop/v1/status' ) )->get_status() );
+		$this->assertSame( 200, $this->dispatch( $this->signed_request( 'GET', '/fred-espace-client/v1/status' ) )->get_status() );
 		$this->assertSame( "198.51.100.7\n", get_option( 'fred_espace_client_allowed_ips' ) );
 	}
 

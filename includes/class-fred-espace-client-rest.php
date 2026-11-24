@@ -19,18 +19,12 @@ class Fred_Espace_Client_Rest {
 	const REST_NAMESPACE = 'fred-espace-client/v1';
 
 	/**
-	 * The address of the connector's former name, which the platform still
-	 * calls until it learns the new one.
-	 */
-	const LEGACY_NAMESPACE = 'hop/v1';
-
-	/**
 	 * Register the routes.
 	 *
 	 * @return void
 	 */
 	public static function register_routes() {
-		foreach ( array( self::REST_NAMESPACE, self::LEGACY_NAMESPACE ) as $namespace ) {
+		foreach ( array( self::REST_NAMESPACE ) as $namespace ) {
 			register_rest_route(
 				$namespace,
 				'/handshake',
