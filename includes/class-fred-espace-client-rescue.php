@@ -6,7 +6,7 @@
  * requested when the plugin that was just updated crashes the whole site,
  * REST API included.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -14,17 +14,17 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Early request handler and fatal error recorder.
  */
-class Hop_Connector_Rescue {
+class Fred_Espace_Client_Rescue {
 
-	const LOADER_FILE  = 'hop-connector-rescue.php';
+	const LOADER_FILE  = 'fred-espace-client-rescue.php';
 	const QUERY_VAR    = 'hop_rescue';
-	const OPTION_FATAL = 'hop_connector_last_fatal';
+	const OPTION_FATAL = 'fred_espace_client_last_fatal';
 
 	/**
 	 * Until when an update is replacing files: a Unix time, set by
-	 * Hop_Connector_Updater around the copy only.
+	 * Fred_Espace_Client_Updater around the copy only.
 	 */
-	const OPTION_COPYING = 'hop_connector_copying';
+	const OPTION_COPYING = 'fred_espace_client_copying';
 
 	/**
 	 * Called by the must-use loader on every request.
@@ -160,20 +160,20 @@ class Hop_Connector_Rescue {
 
 		$dir = dirname( __DIR__ ) . '/';
 
-		if ( ! defined( 'HOP_CONNECTOR_VERSION' ) ) {
-			define( 'HOP_CONNECTOR_VERSION', 'rescue' );
+		if ( ! defined( 'FRED_ESPACE_CLIENT_VERSION' ) ) {
+			define( 'FRED_ESPACE_CLIENT_VERSION', 'rescue' );
 		}
 
-		require_once $dir . 'includes/class-hop-connector-signature.php';
-		require_once $dir . 'includes/class-hop-connector-log.php';
-		require_once $dir . 'includes/class-hop-connector-guard.php';
-		require_once $dir . 'includes/class-hop-connector-keys.php';
-		require_once $dir . 'includes/class-hop-connector-auth.php';
-		require_once $dir . 'includes/class-hop-connector-updater.php';
+		require_once $dir . 'includes/class-fred-espace-client-signature.php';
+		require_once $dir . 'includes/class-fred-espace-client-log.php';
+		require_once $dir . 'includes/class-fred-espace-client-guard.php';
+		require_once $dir . 'includes/class-fred-espace-client-keys.php';
+		require_once $dir . 'includes/class-fred-espace-client-auth.php';
+		require_once $dir . 'includes/class-fred-espace-client-updater.php';
 
 		$body = (string) file_get_contents( 'php://input' );
 
-		$allowed = Hop_Connector_Auth::verify(
+		$allowed = Fred_Espace_Client_Auth::verify(
 			isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '',
 			'/hop/v1/rescue/' . $action,
 			self::header( 'HTTP_X_HOP_KEY_ID' ),
@@ -210,7 +210,7 @@ class Hop_Connector_Rescue {
 		}
 
 		$payload = json_decode( $body, true );
-		$result  = Hop_Connector_Updater::rollback( is_array( $payload ) && isset( $payload['backup_id'] ) ? sanitize_text_field( (string) $payload['backup_id'] ) : '' );
+		$result  = Fred_Espace_Client_Updater::rollback( is_array( $payload ) && isset( $payload['backup_id'] ) ? sanitize_text_field( (string) $payload['backup_id'] ) : '' );
 
 		if ( is_wp_error( $result ) ) {
 			$data = $result->get_error_data();
@@ -272,8 +272,8 @@ class Hop_Connector_Rescue {
 		$class = wp_normalize_path( __FILE__ );
 
 		return "<?php\n/**\n * Plugin Name: Connecteur Espace client (secours)\n * Description: Charge le point d'accès de secours du connecteur avant les autres extensions. Installé et retiré par le Connecteur Espace client.\n */\n\ndefined( 'ABSPATH' ) || exit;\n\n"
-			. '$hop_connector_rescue = ' . var_export( $class, true ) . ";\n\n" // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generates PHP source.
-			. "if ( is_readable( \$hop_connector_rescue ) ) {\n\tdefine( 'HOP_CONNECTOR_RESCUE', true );\n\trequire_once \$hop_connector_rescue;\n\tHop_Connector_Rescue::boot();\n}\n\nunset( \$hop_connector_rescue );\n";
+			. '$fred_espace_client_rescue = ' . var_export( $class, true ) . ";\n\n" // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generates PHP source.
+			. "if ( is_readable( \$fred_espace_client_rescue ) ) {\n\tdefine( 'FRED_ESPACE_CLIENT_RESCUE', true );\n\trequire_once \$fred_espace_client_rescue;\n\tFred_Espace_Client_Rescue::boot();\n}\n\nunset( \$fred_espace_client_rescue );\n";
 	}
 
 	/**

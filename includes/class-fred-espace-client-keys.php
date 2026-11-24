@@ -2,7 +2,7 @@
 /**
  * Storage of the platform's key and of the pending pairing token.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -19,11 +19,11 @@ defined( 'ABSPATH' ) || exit;
  * still paired that way (before 0.8.0, and never moved since) shows as not
  * paired, and is paired again.
  */
-class Hop_Connector_Keys {
+class Fred_Espace_Client_Keys {
 
-	const OPTION_ACTIVE = 'hop_connector_key';
+	const OPTION_ACTIVE = 'fred_espace_client_key';
 
-	const OPTION_PENDING = 'hop_connector_pending_key';
+	const OPTION_PENDING = 'fred_espace_client_pending_key';
 
 	const PENDING_TTL = 900;
 
@@ -224,20 +224,20 @@ class Hop_Connector_Keys {
 
 		$replaced = $previous && ! hash_equals( $previous['key_id'], (string) $key_id );
 
-		Hop_Connector_Log::record(
+		Fred_Espace_Client_Log::record(
 			$replaced ? 'key_replaced' : 'paired',
 			array(
 				'key_id' => $key_id,
-				'note'   => $replaced ? $how . ', ' . __( 'clé précédente', 'hop-connector' ) . ' ' . $previous['key_id'] : $how,
+				'note'   => $replaced ? $how . ', ' . __( 'clé précédente', 'fred-espace-client' ) . ' ' . $previous['key_id'] : $how,
 			)
 		);
 
 		if ( $replaced ) {
-			Hop_Connector_Log::notify(
-				__( 'La clé du connecteur a été remplacée', 'hop-connector' ),
+			Fred_Espace_Client_Log::notify(
+				__( 'La clé du connecteur a été remplacée', 'fred-espace-client' ),
 				sprintf(
 					/* translators: 1: previous key identifier, 2: new key identifier. */
-					__( "La clé qui permet à la plateforme d’agir sur ce site vient d’être remplacée (clé %1\$s remplacée par %2\$s). L’ancienne ne fonctionne plus.\n\nSi ce changement n’était pas prévu : déconnecter le site dans Réglages > Espace client, puis prévenir l’agence.", 'hop-connector' ),
+					__( "La clé qui permet à la plateforme d’agir sur ce site vient d’être remplacée (clé %1\$s remplacée par %2\$s). L’ancienne ne fonctionne plus.\n\nSi ce changement n’était pas prévu : déconnecter le site dans Réglages > Espace client, puis prévenir l’agence.", 'fred-espace-client' ),
 					$previous['key_id'],
 					$key_id
 				)

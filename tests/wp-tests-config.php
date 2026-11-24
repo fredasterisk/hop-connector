@@ -7,7 +7,7 @@
  *
  * The test suite empties this database: never point it at a real site.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 // phpcs:disable -- Test configuration, never loaded by WordPress.
@@ -17,7 +17,7 @@ define( 'ABSPATH', dirname( __DIR__ ) . '/vendor/roots/wordpress-no-content/' );
 // The core package ships no wp-content: a minimal one, with the default theme.
 define( 'WP_CONTENT_DIR', __DIR__ . '/fixtures/wp-content' );
 
-define( 'DB_NAME', getenv( 'WP_TESTS_DB_NAME' ) ?: 'hop_connector_tests' );
+define( 'DB_NAME', getenv( 'WP_TESTS_DB_NAME' ) ?: 'fred_espace_client_tests' );
 define( 'DB_USER', getenv( 'WP_TESTS_DB_USER' ) ?: 'root' );
 define( 'DB_PASSWORD', getenv( 'WP_TESTS_DB_PASSWORD' ) ?: '' );
 define( 'DB_HOST', getenv( 'WP_TESTS_DB_HOST' ) ?: '127.0.0.1' );

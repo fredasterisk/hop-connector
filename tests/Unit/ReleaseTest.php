@@ -2,12 +2,12 @@
 /**
  * Signed releases: the site installs only what the agency's key signed.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 // phpcs:disable -- Test code, never loaded by WordPress.
 
-class ReleaseTest extends Hop_Connector_Test_Case {
+class ReleaseTest extends Fred_Espace_Client_Test_Case {
 
 	/**
 	 * @var string
@@ -25,12 +25,12 @@ class ReleaseTest extends Hop_Connector_Test_Case {
 		$this->keypair = sodium_crypto_sign_keypair();
 		$this->folder  = get_temp_dir() . 'hop-release-' . wp_generate_password( 8, false );
 
-		Hop_Connector_Release_With_Test_Key::$test_keys = array(
+		Fred_Espace_Client_Release_With_Test_Key::$test_keys = array(
 			'test-key' => base64_encode( sodium_crypto_sign_publickey( $this->keypair ) ),
 		);
 
 		wp_mkdir_p( $this->folder . '/includes' );
-		file_put_contents( $this->folder . '/hop-connector.php', "<?php\n/**\n * Plugin Name: Connecteur Espace client\n * Version:           9.0.0\n */\n" );
+		file_put_contents( $this->folder . '/fred-espace-client.php', "<?php\n/**\n * Plugin Name: Connecteur Espace client\n * Version:           9.0.0\n */\n" );
 		file_put_contents( $this->folder . '/includes/a.php', "<?php\n// A.\n" );
 	}
 
@@ -47,7 +47,7 @@ class ReleaseTest extends Hop_Connector_Test_Case {
 	public function test_a_release_signed_by_an_allowed_key_passes() {
 		$this->sign();
 
-		$checked = Hop_Connector_Release_With_Test_Key::verify( $this->folder, '1.0.0' );
+		$checked = Fred_Espace_Client_Release_With_Test_Key::verify( $this->folder, '1.0.0' );
 
 		$this->assertSame( array( 'version' => '9.0.0', 'key' => 'test-key' ), $checked );
 	}
@@ -104,7 +104,7 @@ class ReleaseTest extends Hop_Connector_Test_Case {
 	}
 
 	public function test_the_shipped_keys_are_the_agencys() {
-		$this->assertSame( array( 'principale-2026', 'secours-2026' ), array_keys( Hop_Connector_Release::KEYS ) );
+		$this->assertSame( array( 'principale-2026', 'secours-2026' ), array_keys( Fred_Espace_Client_Release::KEYS ) );
 	}
 
 	/**
@@ -114,9 +114,9 @@ class ReleaseTest extends Hop_Connector_Test_Case {
 	 * @param  string $plugin   Plugin written in the manifest.
 	 * @return void
 	 */
-	private function sign( $version = '9.0.0', $plugin = 'hop-connector' ) {
+	private function sign( $version = '9.0.0', $plugin = 'fred-espace-client' ) {
 		$files = array(
-			'hop-connector.php' => hash_file( 'sha256', $this->folder . '/hop-connector.php' ),
+			'fred-espace-client.php' => hash_file( 'sha256', $this->folder . '/fred-espace-client.php' ),
 			'includes/a.php'    => hash_file( 'sha256', $this->folder . '/includes/a.php' ),
 		);
 
@@ -146,7 +146,7 @@ class ReleaseTest extends Hop_Connector_Test_Case {
 	 * @return void
 	 */
 	private function assertRefused( $code, $current ) {
-		$checked = Hop_Connector_Release_With_Test_Key::verify( $this->folder, $current );
+		$checked = Fred_Espace_Client_Release_With_Test_Key::verify( $this->folder, $current );
 
 		$this->assertWPError( $checked );
 		$this->assertSame( $code, $checked->get_error_code() );

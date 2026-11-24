@@ -3,7 +3,7 @@
  * PHPUnit bootstrap: WordPress's test suite, with the connector loaded as a
  * plugin.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 // phpcs:disable -- Test bootstrap, never loaded by WordPress.
@@ -21,11 +21,11 @@ require_once $tests_dir . '/includes/functions.php';
 tests_add_filter(
 	'muplugins_loaded',
 	static function () use ( $root ) {
-		require $root . '/hop-connector.php';
+		require $root . '/fred-espace-client.php';
 	}
 );
 
 require $tests_dir . '/includes/bootstrap.php';
 
-require_once __DIR__ . '/class-hop-connector-test-case.php';
-require_once __DIR__ . '/class-hop-connector-release-with-test-key.php';
+require_once __DIR__ . '/class-fred-espace-client-test-case.php';
+require_once __DIR__ . '/class-fred-espace-client-release-with-test-key.php';

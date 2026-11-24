@@ -3,7 +3,7 @@
  * Signed releases: an update of the connector is installed only when the
  * agency signed it, with a key that never leaves the agency's computer.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -20,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
  * says. A zip uploaded by hand in Plugins > Add is not checked: an
  * administrator of the site can already change any file.
  */
-class Hop_Connector_Release {
+class Fred_Espace_Client_Release {
 
 	/**
 	 * Public keys allowed to sign a release, by name. The main key signs; the
@@ -55,7 +55,7 @@ class Hop_Connector_Release {
 	 * @return bool|WP_Error
 	 */
 	public static function remember_state( $response, $hook_extra = array() ) {
-		if ( is_array( $hook_extra ) && isset( $hook_extra['plugin'] ) && plugin_basename( HOP_CONNECTOR_FILE ) === $hook_extra['plugin'] ) {
+		if ( is_array( $hook_extra ) && isset( $hook_extra['plugin'] ) && plugin_basename( FRED_ESPACE_CLIENT_FILE ) === $hook_extra['plugin'] ) {
 			$network          = is_multisite() && is_plugin_active_for_network( $hook_extra['plugin'] );
 			self::$was_active = $network || is_plugin_active( $hook_extra['plugin'] ) ? $network : null;
 		}
@@ -77,14 +77,14 @@ class Hop_Connector_Release {
 			return $source;
 		}
 
-		if ( plugin_basename( HOP_CONNECTOR_FILE ) !== $hook_extra['plugin'] ) {
+		if ( plugin_basename( FRED_ESPACE_CLIENT_FILE ) !== $hook_extra['plugin'] ) {
 			return $source;
 		}
 
-		$checked = self::verify( $source, HOP_CONNECTOR_VERSION );
+		$checked = self::verify( $source, FRED_ESPACE_CLIENT_VERSION );
 
 		if ( is_wp_error( $checked ) ) {
-			Hop_Connector_Log::record(
+			Fred_Espace_Client_Log::record(
 				'update_refused',
 				array(
 					'result' => $checked->get_error_code(),
@@ -101,7 +101,7 @@ class Hop_Connector_Release {
 			return $checked;
 		}
 
-		Hop_Connector_Log::record(
+		Fred_Espace_Client_Log::record(
 			'update_verified',
 			array(
 				'key_id' => $checked['key'],
@@ -123,13 +123,13 @@ class Hop_Connector_Release {
 	 *                          one, or its successor (fred-espace-client).
 	 * @return array{version:string,key:string}|WP_Error
 	 */
-	public static function verify( $folder, $current, $plugin = 'hop-connector' ) {
+	public static function verify( $folder, $current, $plugin = 'fred-espace-client' ) {
 		$folder   = rtrim( str_replace( '\\', '/', (string) $folder ), '/' );
 		$manifest = self::read( $folder . '/' . self::MANIFEST );
 		$envelope = json_decode( (string) self::read( $folder . '/' . self::SIGNATURE ), true );
 
 		if ( null === $manifest || ! is_array( $envelope ) ) {
-			return self::refuse( 'hop_release_unsigned', __( 'Cette version du connecteur n’est pas signée : elle n’est pas installée.', 'hop-connector' ) );
+			return self::refuse( 'hop_release_unsigned', __( 'Cette version du connecteur n’est pas signée : elle n’est pas installée.', 'fred-espace-client' ) );
 		}
 
 		$key_id = isset( $envelope['key'] ) ? (string) $envelope['key'] : '';
@@ -138,7 +138,7 @@ class Hop_Connector_Release {
 		$keys      = static::keys();
 
 		if ( ! isset( $keys[ $key_id ] ) || false === $signature || ! self::signed( $manifest, $signature, $keys[ $key_id ] ) ) {
-			return self::refuse( 'hop_release_bad_signature', __( 'La signature de cette version du connecteur ne vient pas de l’agence : elle n’est pas installée.', 'hop-connector' ) );
+			return self::refuse( 'hop_release_bad_signature', __( 'La signature de cette version du connecteur ne vient pas de l’agence : elle n’est pas installée.', 'fred-espace-client' ) );
 		}
 
 		$release = json_decode( $manifest, true );
@@ -146,35 +146,35 @@ class Hop_Connector_Release {
 		$files   = is_array( $release ) && isset( $release['files'] ) && is_array( $release['files'] ) ? $release['files'] : null;
 
 		if ( ! is_array( $release ) || ( $release['plugin'] ?? '' ) !== $plugin || '' === $version || null === $files ) {
-			return self::refuse( 'hop_release_bad_manifest', __( 'La liste signée des fichiers est illisible : la version n’est pas installée.', 'hop-connector' ) );
+			return self::refuse( 'hop_release_bad_manifest', __( 'La liste signée des fichiers est illisible : la version n’est pas installée.', 'fred-espace-client' ) );
 		}
 
 		// An older release, even signed, may carry a flaw fixed since.
 		if ( 'rescue' !== $current && ! version_compare( $version, (string) $current, '>' ) ) {
-			return self::refuse( 'hop_release_downgrade', __( 'Cette version signée n’est pas plus récente que celle du site : elle n’est pas installée.', 'hop-connector' ) );
+			return self::refuse( 'hop_release_downgrade', __( 'Cette version signée n’est pas plus récente que celle du site : elle n’est pas installée.', 'fred-espace-client' ) );
 		}
 
 		$found = self::files( $folder );
 
 		if ( null === $found ) {
-			return self::refuse( 'hop_release_bad_files', __( 'Un lien symbolique se trouve dans cette version : elle n’est pas installée.', 'hop-connector' ) );
+			return self::refuse( 'hop_release_bad_files', __( 'Un lien symbolique se trouve dans cette version : elle n’est pas installée.', 'fred-espace-client' ) );
 		}
 
 		ksort( $files );
 		ksort( $found );
 
 		if ( array_keys( $files ) !== array_keys( $found ) ) {
-			return self::refuse( 'hop_release_bad_files', __( 'Des fichiers de cette version ne sont pas ceux qui ont été signés : elle n’est pas installée.', 'hop-connector' ) );
+			return self::refuse( 'hop_release_bad_files', __( 'Des fichiers de cette version ne sont pas ceux qui ont été signés : elle n’est pas installée.', 'fred-espace-client' ) );
 		}
 
 		foreach ( $found as $path => $hash ) {
 			if ( ! is_string( $files[ $path ] ) || ! hash_equals( strtolower( $files[ $path ] ), $hash ) ) {
-				return self::refuse( 'hop_release_bad_files', __( 'Des fichiers de cette version ne sont pas ceux qui ont été signés : elle n’est pas installée.', 'hop-connector' ) );
+				return self::refuse( 'hop_release_bad_files', __( 'Des fichiers de cette version ne sont pas ceux qui ont été signés : elle n’est pas installée.', 'fred-espace-client' ) );
 			}
 		}
 
 		if ( self::header_version( $folder . '/' . $plugin . '.php' ) !== $version ) {
-			return self::refuse( 'hop_release_bad_manifest', __( 'La version signée ne correspond pas à celle de l’extension : elle n’est pas installée.', 'hop-connector' ) );
+			return self::refuse( 'hop_release_bad_manifest', __( 'La version signée ne correspond pas à celle de l’extension : elle n’est pas installée.', 'fred-espace-client' ) );
 		}
 
 		return array(

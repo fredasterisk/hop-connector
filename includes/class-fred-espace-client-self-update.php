@@ -2,7 +2,7 @@
 /**
  * Updates of the connector itself, served by the platform.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -13,10 +13,10 @@ defined( 'ABSPATH' ) || exit;
  *
  * WordPress asks through the filter named after the host of the Update URI
  * header. The zip it then downloads is installed only once
- * Hop_Connector_Release has checked the agency's signature: whoever answers
+ * Fred_Espace_Client_Release has checked the agency's signature: whoever answers
  * here cannot make the site install anything else.
  */
-class Hop_Connector_Self_Update {
+class Fred_Espace_Client_Self_Update {
 
 	/**
 	 * The platform, as in the Update URI header.
@@ -24,9 +24,15 @@ class Hop_Connector_Self_Update {
 	const PLATFORM = 'https://client.fredrobert.com';
 
 	/**
+	 * Where the platform serves this name of the connector. The former name,
+	 * hop-connector, has its own address, frozen at its last version.
+	 */
+	const PATH = '/connector/fred-espace-client/';
+
+	/**
 	 * Site transient holding the latest version read from the platform.
 	 */
-	const CACHE = 'hop_connector_latest';
+	const CACHE = 'fred_espace_client_latest';
 
 	/**
 	 * Hook into the update checks of WordPress.
@@ -41,13 +47,16 @@ class Hop_Connector_Self_Update {
 
 	/**
 	 * Address of the platform. A development copy of the platform can be set
-	 * in wp-config.php with HOP_CONNECTOR_PLATFORM_URL.
+	 * in wp-config.php with FRED_ESPACE_CLIENT_PLATFORM_URL (or the former
+	 * HOP_CONNECTOR_PLATFORM_URL).
 	 *
 	 * @return string Without a trailing slash.
 	 */
 	public static function platform_url() {
-		if ( defined( 'HOP_CONNECTOR_PLATFORM_URL' ) && is_string( HOP_CONNECTOR_PLATFORM_URL ) && 1 === preg_match( '#^https?://[^/\s]+#', HOP_CONNECTOR_PLATFORM_URL ) ) {
-			return untrailingslashit( HOP_CONNECTOR_PLATFORM_URL );
+		foreach ( array( 'FRED_ESPACE_CLIENT_PLATFORM_URL', 'HOP_CONNECTOR_PLATFORM_URL' ) as $constant ) {
+			if ( defined( $constant ) && is_string( constant( $constant ) ) && 1 === preg_match( '#^https?://[^/\s]+#', constant( $constant ) ) ) {
+				return untrailingslashit( constant( $constant ) );
+			}
 		}
 
 		return self::PLATFORM;
@@ -62,7 +71,7 @@ class Hop_Connector_Self_Update {
 	 * @return array|false
 	 */
 	public static function check( $update, $plugin_data, $plugin_file ) {
-		if ( plugin_basename( HOP_CONNECTOR_FILE ) !== $plugin_file ) {
+		if ( plugin_basename( FRED_ESPACE_CLIENT_FILE ) !== $plugin_file ) {
 			return $update;
 		}
 
@@ -73,7 +82,7 @@ class Hop_Connector_Self_Update {
 		}
 
 		return array(
-			'id'           => self::platform_url() . '/connector/',
+			'id'           => self::platform_url() . self::PATH,
 			'slug'         => dirname( $plugin_file ),
 			'plugin'       => $plugin_file,
 			'version'      => $release['version'],
@@ -93,7 +102,7 @@ class Hop_Connector_Self_Update {
 	 * @return false|object|array
 	 */
 	public static function details( $result, $action, $args ) {
-		if ( 'plugin_information' !== $action || ! is_object( $args ) || empty( $args->slug ) || dirname( plugin_basename( HOP_CONNECTOR_FILE ) ) !== $args->slug ) {
+		if ( 'plugin_information' !== $action || ! is_object( $args ) || empty( $args->slug ) || dirname( plugin_basename( FRED_ESPACE_CLIENT_FILE ) ) !== $args->slug ) {
 			return $result;
 		}
 
@@ -104,7 +113,7 @@ class Hop_Connector_Self_Update {
 		}
 
 		return (object) array(
-			'name'          => __( 'Connecteur Espace client', 'hop-connector' ),
+			'name'          => __( 'Connecteur Espace client', 'fred-espace-client' ),
 			'slug'          => $args->slug,
 			'version'       => $release['version'],
 			'author'        => 'Fred Robert',
@@ -154,7 +163,7 @@ class Hop_Connector_Self_Update {
 	 */
 	private static function fetch() {
 		$response = wp_remote_get(
-			self::platform_url() . '/connector/latest.json',
+			self::platform_url() . self::PATH . 'latest.json',
 			array(
 				'timeout'     => 10,
 				'redirection' => 2,
@@ -176,7 +185,7 @@ class Hop_Connector_Self_Update {
 		$package = (string) $data['download_url'];
 
 		// Only a version number, and only a zip of the platform itself.
-		if ( 1 !== preg_match( '/^\d+\.\d+\.\d+$/', $version ) || 0 !== strpos( $package, self::platform_url() . '/connector/' ) ) {
+		if ( 1 !== preg_match( '/^\d+\.\d+\.\d+$/', $version ) || 0 !== strpos( $package, self::platform_url() . self::PATH ) ) {
 			return null;
 		}
 

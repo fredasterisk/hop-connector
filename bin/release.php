@@ -5,13 +5,13 @@
  *     php bin/release.php keys              Create the main key (encrypted by a passphrase) and the backup key (on paper).
  *     php bin/release.php sign v0.16.0      Build and sign the zip of a tag, in dist/.
  *     php bin/release.php sign v0.16.0 --backup   The same, with the backup key typed from its sheet.
- *     php bin/release.php verify dist/hop-connector-0.16.0.zip   Check a zip as a site would.
+ *     php bin/release.php verify dist/fred-espace-client-0.16.0.zip   Check a zip as a site would.
  *
  * The main key lives in %USERPROFILE%\.hop-connector\release-main.key (or
  * HOP_RELEASE_HOME), encrypted by the passphrase: the file alone signs
  * nothing. Never on GitHub, never on a server.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 // phpcs:disable -- A command-line tool run on the agency's computer, never loaded by WordPress.
@@ -22,7 +22,7 @@ if ( PHP_SAPI !== 'cli' ) {
 
 const MAIN_NAME   = 'principale-2026';
 const BACKUP_NAME = 'secours-2026';
-const SLUG        = 'hop-connector';
+const SLUG        = 'fred-espace-client';
 
 $root = dirname( __DIR__ );
 $args = array_slice( $argv, 1 );
@@ -36,7 +36,7 @@ try {
 			sign( $root, (string) ( $args[1] ?? '' ), in_array( '--backup', $args, true ) );
 			break;
 		case 'verify':
-			$checked = verify_zip( (string) ( $args[1] ?? '' ), allowed_keys( file_get_contents( $root . '/includes/class-hop-connector-release.php' ) ) );
+			$checked = verify_zip( (string) ( $args[1] ?? '' ), allowed_keys( file_get_contents( $root . '/includes/class-fred-espace-client-release.php' ) ) );
 			say( "Signature valide : version {$checked['version']}, clé {$checked['key']}." );
 			break;
 		default:
@@ -157,10 +157,10 @@ function sign( string $root, string $tag, bool $with_backup ): void {
 	unlink( $archive );
 
 	$folder = $work . '/' . SLUG;
-	$keys   = allowed_keys( (string) file_get_contents( $folder . '/includes/class-hop-connector-release.php' ) );
+	$keys   = allowed_keys( (string) file_get_contents( $folder . '/includes/class-fred-espace-client-release.php' ) );
 
-	if ( header_version( $folder . '/hop-connector.php' ) !== $version ) {
-		throw new RuntimeException( "La version de hop-connector.php n'est pas {$version} dans ce tag." );
+	if ( header_version( $folder . '/fred-espace-client.php' ) !== $version ) {
+		throw new RuntimeException( "La version de fred-espace-client.php n'est pas {$version} dans ce tag." );
 	}
 
 	[ $name, $secret ] = $with_backup ? backup_key() : main_key();
@@ -247,7 +247,7 @@ function verify_zip( string $zip_file, array $keys ): array {
 		ksort( $files );
 		ksort( $found );
 
-		if ( $files !== $found || header_version( $folder . '/hop-connector.php' ) !== $release['version'] ) {
+		if ( $files !== $found || header_version( $folder . '/fred-espace-client.php' ) !== $release['version'] ) {
 			throw new RuntimeException( 'Les fichiers du zip ne sont pas ceux qui ont été signés.' );
 		}
 
@@ -305,7 +305,7 @@ function backup_key(): array {
  */
 function allowed_keys( string $source ): array {
 	if ( ! preg_match( '/const KEYS = array\((.*?)\);/s', $source, $block ) ) {
-		throw new RuntimeException( 'Liste des clés introuvable dans class-hop-connector-release.php.' );
+		throw new RuntimeException( 'Liste des clés introuvable dans class-fred-espace-client-release.php.' );
 	}
 
 	preg_match_all( "/'([\w-]+)'\s*=>\s*'([A-Za-z0-9+\/=]{44})'/", $block[1], $pairs, PREG_SET_ORDER );

@@ -10,7 +10,7 @@
  * Only the WordPress folder is read. No symbolic link is followed, in a
  * listing or in a path asked for: a link could lead anywhere on the server.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * File listing and file reading.
  */
-class Hop_Connector_Pull {
+class Fred_Espace_Client_Pull {
 
 	const FILES_PER_PAGE = 5000;
 	const ITEMS_PER_GO   = 500;
@@ -38,13 +38,13 @@ class Hop_Connector_Pull {
 		$root = self::root();
 
 		if ( null === $root ) {
-			return new WP_Error( 'hop_pull_failed', __( 'Le dossier de WordPress est illisible.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_pull_failed', __( 'Le dossier de WordPress est illisible.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		$after = (string) $after;
 
 		if ( '' !== $after && ! self::is_plain_path( $after ) ) {
-			return new WP_Error( 'hop_bad_path', __( 'Chemin refusé.', 'hop-connector' ), array( 'status' => 400 ) );
+			return new WP_Error( 'hop_bad_path', __( 'Chemin refusé.', 'fred-espace-client' ), array( 'status' => 400 ) );
 		}
 
 		$files = array();
@@ -71,7 +71,7 @@ class Hop_Connector_Pull {
 		$root = self::root();
 
 		if ( null === $root || ! is_array( $items ) || count( $items ) > self::ITEMS_PER_GO ) {
-			return new WP_Error( 'hop_bad_request', __( 'Demande de fichiers refusée.', 'hop-connector' ), array( 'status' => 400 ) );
+			return new WP_Error( 'hop_bad_request', __( 'Demande de fichiers refusée.', 'fred-espace-client' ), array( 'status' => 400 ) );
 		}
 
 		$excluded = self::excluded();
@@ -347,8 +347,8 @@ class Hop_Connector_Pull {
 		$content = null === $content || '' === $content ? 'wp-content' : $content;
 
 		$excluded = array(
-			'hop-connector-backups-*',
-			$content . '/hop-connector-backups-*',
+			'fred-espace-client-backups-*',
+			$content . '/fred-espace-client-backups-*',
 			$content . '/cache',
 			$content . '/upgrade',
 			$content . '/upgrade-temp-backup',
@@ -367,7 +367,7 @@ class Hop_Connector_Pull {
 		 *
 		 * @param list<string> $excluded  Patterns.
 		 */
-		$filtered = apply_filters( 'hop_connector_pull_excluded', $excluded );
+		$filtered = apply_filters( 'fred_espace_client_pull_excluded', $excluded );
 
 		return is_array( $filtered ) ? array_values( array_filter( $filtered, 'is_string' ) ) : $excluded;
 	}

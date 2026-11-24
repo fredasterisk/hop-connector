@@ -2,12 +2,12 @@
 /**
  * New versions of the connector, read from the platform.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 // phpcs:disable -- Test code, never loaded by WordPress.
 
-class SelfUpdateTest extends Hop_Connector_Test_Case {
+class SelfUpdateTest extends Fred_Espace_Client_Test_Case {
 
 	/**
 	 * What the platform answers to latest.json.
@@ -26,7 +26,7 @@ class SelfUpdateTest extends Hop_Connector_Test_Case {
 	public function set_up() {
 		parent::set_up();
 
-		Hop_Connector_Self_Update::forget();
+		Fred_Espace_Client_Self_Update::forget();
 		$this->answer   = $this->json( $this->release() );
 		$this->requests = array();
 
@@ -35,7 +35,7 @@ class SelfUpdateTest extends Hop_Connector_Test_Case {
 
 	public function tear_down() {
 		remove_filter( 'pre_http_request', array( $this, 'platform' ) );
-		Hop_Connector_Self_Update::forget();
+		Fred_Espace_Client_Self_Update::forget();
 
 		parent::tear_down();
 	}
@@ -51,51 +51,51 @@ class SelfUpdateTest extends Hop_Connector_Test_Case {
 	}
 
 	public function test_wordpress_learns_the_new_version_from_the_platform() {
-		$update = apply_filters( 'update_plugins_client.fredrobert.com', false, array(), plugin_basename( HOP_CONNECTOR_FILE ), array() );
+		$update = apply_filters( 'update_plugins_client.fredrobert.com', false, array(), plugin_basename( FRED_ESPACE_CLIENT_FILE ), array() );
 
-		$this->assertSame( array( 'https://client.fredrobert.com/connector/latest.json' ), $this->requests );
+		$this->assertSame( array( 'https://client.fredrobert.com/connector/fred-espace-client/latest.json' ), $this->requests );
 		$this->assertSame( '9.1.0', $update['version'] );
-		$this->assertSame( 'https://client.fredrobert.com/connector/hop-connector-9.1.0.zip', $update['package'] );
+		$this->assertSame( 'https://client.fredrobert.com/connector/fred-espace-client/fred-espace-client-9.1.0.zip', $update['package'] );
 		$this->assertSame( '6.5', $update['requires'] );
 		$this->assertSame( '7.4', $update['requires_php'] );
 	}
 
 	public function test_the_header_points_at_the_platform_not_at_github() {
-		$headers = get_file_data( HOP_CONNECTOR_FILE, array( 'uri' => 'Update URI' ) );
+		$headers = get_file_data( FRED_ESPACE_CLIENT_FILE, array( 'uri' => 'Update URI' ) );
 
 		$this->assertSame( 'client.fredrobert.com', wp_parse_url( $headers['uri'], PHP_URL_HOST ) );
 		$this->assertFalse( class_exists( 'Asterisk_GitHub_Updater', false ) && has_filter( 'update_plugins_github.com' ) );
 	}
 
 	public function test_other_plugins_are_left_alone() {
-		$this->assertFalse( Hop_Connector_Self_Update::check( false, array(), 'other/other.php' ) );
+		$this->assertFalse( Fred_Espace_Client_Self_Update::check( false, array(), 'other/other.php' ) );
 		$this->assertSame( array(), $this->requests );
 	}
 
 	public function test_a_zip_outside_the_platform_is_never_offered() {
-		$this->answer = $this->json( array_merge( $this->release(), array( 'download_url' => 'https://evil.example/hop-connector-9.1.0.zip' ) ) );
+		$this->answer = $this->json( array_merge( $this->release(), array( 'download_url' => 'https://evil.example/fred-espace-client-9.1.0.zip' ) ) );
 
-		$this->assertFalse( Hop_Connector_Self_Update::check( false, array(), plugin_basename( HOP_CONNECTOR_FILE ) ) );
+		$this->assertFalse( Fred_Espace_Client_Self_Update::check( false, array(), plugin_basename( FRED_ESPACE_CLIENT_FILE ) ) );
 	}
 
 	public function test_a_version_that_is_not_a_number_is_never_offered() {
 		$this->answer = $this->json( array_merge( $this->release(), array( 'version' => '9.1.0<script>' ) ) );
 
-		$this->assertNull( Hop_Connector_Self_Update::latest() );
+		$this->assertNull( Fred_Espace_Client_Self_Update::latest() );
 	}
 
 	public function test_the_platform_is_asked_once_an_hour_even_when_it_fails() {
 		$this->answer = new WP_Error( 'http_request_failed', 'Délai dépassé' );
 
-		$this->assertNull( Hop_Connector_Self_Update::latest() );
-		$this->assertNull( Hop_Connector_Self_Update::latest() );
+		$this->assertNull( Fred_Espace_Client_Self_Update::latest() );
+		$this->assertNull( Fred_Espace_Client_Self_Update::latest() );
 		$this->assertCount( 1, $this->requests );
 
-		Hop_Connector_Self_Update::forget();
+		Fred_Espace_Client_Self_Update::forget();
 		$this->answer = $this->json( $this->release() );
 
-		$this->assertSame( '9.1.0', Hop_Connector_Self_Update::latest()['version'] );
-		$this->assertSame( '9.1.0', Hop_Connector_Self_Update::latest()['version'] );
+		$this->assertSame( '9.1.0', Fred_Espace_Client_Self_Update::latest()['version'] );
+		$this->assertSame( '9.1.0', Fred_Espace_Client_Self_Update::latest()['version'] );
 		$this->assertCount( 2, $this->requests );
 	}
 
@@ -107,24 +107,24 @@ class SelfUpdateTest extends Hop_Connector_Test_Case {
 			'cookies'  => array(),
 		);
 
-		$this->assertNull( Hop_Connector_Self_Update::latest() );
+		$this->assertNull( Fred_Espace_Client_Self_Update::latest() );
 	}
 
 	public function test_the_details_window_shows_the_changelog() {
-		$details = Hop_Connector_Self_Update::details( false, 'plugin_information', (object) array( 'slug' => dirname( plugin_basename( HOP_CONNECTOR_FILE ) ) ) );
+		$details = Fred_Espace_Client_Self_Update::details( false, 'plugin_information', (object) array( 'slug' => dirname( plugin_basename( FRED_ESPACE_CLIENT_FILE ) ) ) );
 
 		$this->assertSame( '9.1.0', $details->version );
 		$this->assertStringContainsString( 'Menu court', $details->sections['changelog'] );
-		$this->assertFalse( Hop_Connector_Self_Update::details( false, 'plugin_information', (object) array( 'slug' => 'akismet' ) ) );
+		$this->assertFalse( Fred_Espace_Client_Self_Update::details( false, 'plugin_information', (object) array( 'slug' => 'akismet' ) ) );
 	}
 
 	public function test_a_check_asked_by_the_platform_forgets_the_version_read() {
-		Hop_Connector_Self_Update::latest();
-		$this->assertNotFalse( get_site_transient( Hop_Connector_Self_Update::CACHE ) );
+		Fred_Espace_Client_Self_Update::latest();
+		$this->assertNotFalse( get_site_transient( Fred_Espace_Client_Self_Update::CACHE ) );
 
-		Hop_Connector_Updater::refresh();
+		Fred_Espace_Client_Updater::refresh();
 
-		$this->assertFalse( get_site_transient( Hop_Connector_Self_Update::CACHE ) );
+		$this->assertFalse( get_site_transient( Fred_Espace_Client_Self_Update::CACHE ) );
 	}
 
 	/**
@@ -133,7 +133,7 @@ class SelfUpdateTest extends Hop_Connector_Test_Case {
 	private function release() {
 		return array(
 			'version'      => '9.1.0',
-			'download_url' => 'https://client.fredrobert.com/connector/hop-connector-9.1.0.zip',
+			'download_url' => 'https://client.fredrobert.com/connector/fred-espace-client/fred-espace-client-9.1.0.zip',
 			'sha256'       => str_repeat( 'a', 64 ),
 			'requires'     => '6.5',
 			'requires_php' => '7.4',

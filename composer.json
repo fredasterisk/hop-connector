@@ -1,5 +1,5 @@
 {
-    "name": "fredasterisk/hop-connector",
+    "name": "fredasterisk/fred-espace-client",
     "description": "Connecteur Espace client : relie un site WordPress à la plateforme par des requêtes signées.",
     "type": "wordpress-plugin",
     "license": "GPL-2.0-or-later",

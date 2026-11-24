@@ -2,7 +2,7 @@
 /**
  * Applies one update at a time, with a local backup that can be restored.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -10,17 +10,17 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Update, backup and rollback of plugins, themes and core.
  */
-class Hop_Connector_Updater {
+class Fred_Espace_Client_Updater {
 
-	const OPTION_LOCK    = 'hop_connector_update_lock';
-	const OPTION_BACKUPS = 'hop_connector_backups';
+	const OPTION_LOCK    = 'fred_espace_client_update_lock';
+	const OPTION_BACKUPS = 'fred_espace_client_backups';
 	const LOCK_TTL       = 600;
 	const KEEP_BACKUPS   = 5;
 
 	/**
 	 * Folder chosen to hold the backup directory.
 	 */
-	const OPTION_BACKUP_PARENT = 'hop_connector_backup_parent';
+	const OPTION_BACKUP_PARENT = 'fred_espace_client_backup_parent';
 
 	/**
 	 * Ask WordPress to check for updates now, through its standard mechanism.
@@ -35,7 +35,7 @@ class Hop_Connector_Updater {
 
 		wp_clean_plugins_cache( true );
 		wp_clean_themes_cache( true );
-		Hop_Connector_Self_Update::forget();
+		Fred_Espace_Client_Self_Update::forget();
 		wp_version_check( array(), true );
 		wp_update_plugins();
 		wp_update_themes();
@@ -56,7 +56,7 @@ class Hop_Connector_Updater {
 		$held = self::acquire_lock();
 
 		if ( false === $held ) {
-			return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'hop-connector' ), array( 'status' => 409 ) );
+			return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'fred-espace-client' ), array( 'status' => 409 ) );
 		}
 
 		// A long update must not be cut off halfway by the PHP time limit.
@@ -96,18 +96,18 @@ class Hop_Connector_Updater {
 		$file = self::plugin_file( $slug );
 
 		if ( ! $file ) {
-			return new WP_Error( 'hop_not_installed', __( 'Extension introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+			return new WP_Error( 'hop_not_installed', __( 'Extension introuvable.', 'fred-espace-client' ), array( 'status' => 404 ) );
 		}
 
 		// The connector never acts on itself: Hop would lose the site.
-		if ( plugin_basename( HOP_CONNECTOR_DIR . 'hop-connector.php' ) === $file ) {
-			return new WP_Error( 'hop_forbidden', __( 'Le connecteur ne peut pas agir sur lui-même.', 'hop-connector' ), array( 'status' => 403 ) );
+		if ( plugin_basename( FRED_ESPACE_CLIENT_DIR . 'fred-espace-client.php' ) === $file ) {
+			return new WP_Error( 'hop_forbidden', __( 'Le connecteur ne peut pas agir sur lui-même.', 'fred-espace-client' ), array( 'status' => 403 ) );
 		}
 
 		$held = self::acquire_lock();
 
 		if ( false === $held ) {
-			return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'hop-connector' ), array( 'status' => 409 ) );
+			return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'fred-espace-client' ), array( 'status' => 409 ) );
 		}
 
 		try {
@@ -135,7 +135,7 @@ class Hop_Connector_Updater {
 
 				default:
 					if ( $active ) {
-						return new WP_Error( 'hop_plugin_active', __( 'Désactivez l\'extension avant de la supprimer.', 'hop-connector' ), array( 'status' => 409 ) );
+						return new WP_Error( 'hop_plugin_active', __( 'Désactivez l\'extension avant de la supprimer.', 'fred-espace-client' ), array( 'status' => 409 ) );
 					}
 
 					$plugins   = get_plugins();
@@ -150,7 +150,7 @@ class Hop_Connector_Updater {
 					if ( true !== $deleted ) {
 						return new WP_Error(
 							'hop_delete_failed',
-							is_wp_error( $deleted ) ? $deleted->get_error_message() : __( 'Suppression impossible.', 'hop-connector' ),
+							is_wp_error( $deleted ) ? $deleted->get_error_message() : __( 'Suppression impossible.', 'fred-espace-client' ),
 							array( 'status' => 500 )
 						);
 					}
@@ -198,7 +198,7 @@ class Hop_Connector_Updater {
 		}
 
 		if ( ! isset( $backups[ $backup_id ] ) || ! is_dir( $backups[ $backup_id ]['path'] ) ) {
-			return new WP_Error( 'hop_no_backup', __( 'Sauvegarde introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+			return new WP_Error( 'hop_no_backup', __( 'Sauvegarde introuvable.', 'fred-espace-client' ), array( 'status' => 404 ) );
 		}
 
 		$backup     = $backups[ $backup_id ];
@@ -206,7 +206,7 @@ class Hop_Connector_Updater {
 		$target     = self::component_dir( $backup['type'], $backup['slug'] );
 
 		if ( ! $filesystem || ! $target ) {
-			return new WP_Error( 'hop_filesystem', __( 'Accès direct aux fichiers impossible.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_filesystem', __( 'Accès direct aux fichiers impossible.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		// A failed update can leave the site in maintenance mode.
@@ -218,7 +218,7 @@ class Hop_Connector_Updater {
 				$filesystem->delete( $target, true );
 
 				if ( ! wp_mkdir_p( $target ) ) {
-					return new WP_Error( 'hop_rollback_failed', __( 'Impossible de recréer le dossier.', 'hop-connector' ) );
+					return new WP_Error( 'hop_rollback_failed', __( 'Impossible de recréer le dossier.', 'fred-espace-client' ) );
 				}
 
 				return copy_dir( $backup['path'], $target );
@@ -253,7 +253,7 @@ class Hop_Connector_Updater {
 		$file = self::plugin_file( $slug );
 
 		if ( ! $file ) {
-			return new WP_Error( 'hop_not_installed', __( 'Extension introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+			return new WP_Error( 'hop_not_installed', __( 'Extension introuvable.', 'fred-espace-client' ), array( 'status' => 404 ) );
 		}
 
 		$plugins = get_plugins();
@@ -306,7 +306,7 @@ class Hop_Connector_Updater {
 		$theme = wp_get_theme( $slug );
 
 		if ( ! $theme->exists() ) {
-			return new WP_Error( 'hop_not_installed', __( 'Thème introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+			return new WP_Error( 'hop_not_installed', __( 'Thème introuvable.', 'fred-espace-client' ), array( 'status' => 404 ) );
 		}
 
 		$from    = (string) $theme->get( 'Version' );
@@ -396,13 +396,13 @@ class Hop_Connector_Updater {
 	 */
 	private static function check_versions( $from, $offered, $expected_from, $expected_to ) {
 		if ( '' === $offered ) {
-			return new WP_Error( 'hop_no_update', __( 'Aucune mise à jour n\'est proposée pour cet élément.', 'hop-connector' ), array( 'status' => 409 ) );
+			return new WP_Error( 'hop_no_update', __( 'Aucune mise à jour n\'est proposée pour cet élément.', 'fred-espace-client' ), array( 'status' => 409 ) );
 		}
 
 		if ( $from !== $expected_from || $offered !== $expected_to ) {
 			return new WP_Error(
 				'hop_version_mismatch',
-				__( 'Les versions ne correspondent plus à celles attendues.', 'hop-connector' ),
+				__( 'Les versions ne correspondent plus à celles attendues.', 'fred-espace-client' ),
 				array(
 					'status'    => 409,
 					'installed' => $from,
@@ -457,7 +457,7 @@ class Hop_Connector_Updater {
 		$source = self::component_dir( $type, $slug );
 
 		if ( ! self::filesystem() || ! $source || ! is_dir( $source ) ) {
-			return new WP_Error( 'hop_filesystem', __( 'Accès direct aux fichiers impossible : mise à jour annulée faute de sauvegarde.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_filesystem', __( 'Accès direct aux fichiers impossible : mise à jour annulée faute de sauvegarde.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		$root = self::backup_root();
@@ -470,7 +470,7 @@ class Hop_Connector_Updater {
 		$path      = $root . '/' . $backup_id;
 
 		if ( ! wp_mkdir_p( $path ) ) {
-			return new WP_Error( 'hop_backup_failed', __( 'Impossible de créer le dossier de sauvegarde.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_backup_failed', __( 'Impossible de créer le dossier de sauvegarde.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		$copied = copy_dir( $source, $path );
@@ -505,17 +505,17 @@ class Hop_Connector_Updater {
 	 * @return string|WP_Error
 	 */
 	public static function backup_root() {
-		$suffix = get_option( 'hop_connector_backup_dir' );
+		$suffix = get_option( 'fred_espace_client_backup_dir' );
 
 		if ( ! is_string( $suffix ) || ! preg_match( '/^[a-f0-9]{24}$/', $suffix ) ) {
 			$suffix = bin2hex( random_bytes( 12 ) );
-			update_option( 'hop_connector_backup_dir', $suffix, false );
+			update_option( 'fred_espace_client_backup_dir', $suffix, false );
 		}
 
-		$root = self::backup_parent( $suffix ) . '/hop-connector-backups-' . $suffix;
+		$root = self::backup_parent( $suffix ) . '/fred-espace-client-backups-' . $suffix;
 
 		if ( ! wp_mkdir_p( $root ) ) {
-			return new WP_Error( 'hop_backup_failed', __( 'Impossible de créer le dossier de sauvegarde.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_backup_failed', __( 'Impossible de créer le dossier de sauvegarde.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		if ( ! file_exists( $root . '/.htaccess' ) ) {
@@ -613,8 +613,8 @@ class Hop_Connector_Updater {
 	 * @return bool Whether the copies are now under $to, or there were none.
 	 */
 	private static function move_backups( $from, $to, $suffix ) {
-		$source = wp_normalize_path( $from . '/hop-connector-backups-' . $suffix );
-		$target = wp_normalize_path( $to . '/hop-connector-backups-' . $suffix );
+		$source = wp_normalize_path( $from . '/fred-espace-client-backups-' . $suffix );
+		$target = wp_normalize_path( $to . '/fred-espace-client-backups-' . $suffix );
 
 		if ( ! is_dir( $source ) ) {
 			return true;
@@ -686,19 +686,19 @@ class Hop_Connector_Updater {
 
 	/**
 	 * Run what replaces files, with the cron kept out meanwhile (see
-	 * Hop_Connector_Rescue::boot()). The nightly copy, which only reads, does
+	 * Fred_Espace_Client_Rescue::boot()). The nightly copy, which only reads, does
 	 * not set this mark.
 	 *
 	 * @param  callable $copy  What replaces the files.
 	 * @return mixed What it returns.
 	 */
 	public static function run_while_copying( callable $copy ) {
-		update_option( Hop_Connector_Rescue::OPTION_COPYING, time() + self::LOCK_TTL, false );
+		update_option( Fred_Espace_Client_Rescue::OPTION_COPYING, time() + self::LOCK_TTL, false );
 
 		try {
 			return $copy();
 		} finally {
-			delete_option( Hop_Connector_Rescue::OPTION_COPYING );
+			delete_option( Fred_Espace_Client_Rescue::OPTION_COPYING );
 		}
 	}
 
