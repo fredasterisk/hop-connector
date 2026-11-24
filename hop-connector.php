@@ -33,6 +33,7 @@ require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-auth.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-inventory.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-login.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-updater.php';
+require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-successor.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-database.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-pull.php';
 require_once HOP_CONNECTOR_DIR . 'includes/class-hop-connector-rescue.php';

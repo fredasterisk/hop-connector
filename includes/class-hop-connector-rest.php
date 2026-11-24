@@ -121,6 +121,26 @@ class Hop_Connector_Rest {
 
 		register_rest_route(
 			self::REST_NAMESPACE,
+			'/successor/install',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'successor_install' ),
+				'permission_callback' => array( 'Hop_Connector_Auth', 'check' ),
+				'args'                => array(
+					'download_url' => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+					'sha256'       => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::REST_NAMESPACE,
 			'/plugins/state',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -383,6 +403,21 @@ class Hop_Connector_Rest {
 			(string) $request->get_param( 'slug' ),
 			(string) $request->get_param( 'expected_from' ),
 			(string) $request->get_param( 'expected_to' )
+		);
+
+		return is_wp_error( $result ) ? $result : self::respond( $result );
+	}
+
+	/**
+	 * Install the connector under its new name, which takes over from this one.
+	 *
+	 * @param  WP_REST_Request $request  Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function successor_install( WP_REST_Request $request ) {
+		$result = Hop_Connector_Successor::install(
+			(string) $request->get_param( 'download_url' ),
+			(string) $request->get_param( 'sha256' )
 		);
 
 		return is_wp_error( $result ) ? $result : self::respond( $result );

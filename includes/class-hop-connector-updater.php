@@ -213,7 +213,7 @@ class Hop_Connector_Updater {
 		$filesystem->delete( ABSPATH . '.maintenance' );
 
 		// From the removal of the folder to the end of the copy.
-		$copied = self::while_copying(
+		$copied = self::run_while_copying(
 			function () use ( $filesystem, $backup, $target ) {
 				$filesystem->delete( $target, true );
 
@@ -277,7 +277,7 @@ class Hop_Connector_Updater {
 		$skin     = new Automatic_Upgrader_Skin();
 		$upgrader = new Plugin_Upgrader( $skin );
 		$copy     = array( 'copy_started_at' => microtime( true ) );
-		$results  = self::while_copying(
+		$results  = self::run_while_copying(
 			function () use ( $upgrader, $file ) {
 				return $upgrader->bulk_upgrade( array( $file ) );
 			}
@@ -328,7 +328,7 @@ class Hop_Connector_Updater {
 		$skin     = new Automatic_Upgrader_Skin();
 		$upgrader = new Theme_Upgrader( $skin );
 		$copy     = array( 'copy_started_at' => microtime( true ) );
-		$results  = self::while_copying(
+		$results  = self::run_while_copying(
 			function () use ( $upgrader, $slug ) {
 				return $upgrader->bulk_upgrade( array( $slug ) );
 			}
@@ -367,7 +367,7 @@ class Hop_Connector_Updater {
 		$skin     = new Automatic_Upgrader_Skin();
 		$upgrader = new Core_Upgrader( $skin );
 		$copy     = array( 'copy_started_at' => microtime( true ) );
-		$result   = self::while_copying(
+		$result   = self::run_while_copying(
 			function () use ( $upgrader, $update ) {
 				return $upgrader->upgrade( $update );
 			}
@@ -692,7 +692,7 @@ class Hop_Connector_Updater {
 	 * @param  callable $copy  What replaces the files.
 	 * @return mixed What it returns.
 	 */
-	private static function while_copying( callable $copy ) {
+	public static function run_while_copying( callable $copy ) {
 		update_option( Hop_Connector_Rescue::OPTION_COPYING, time() + self::LOCK_TTL, false );
 
 		try {

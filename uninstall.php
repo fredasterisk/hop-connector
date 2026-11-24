@@ -8,6 +8,12 @@
 
 defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
+// The connector under its new name took over this plugin's key, settings and
+// copies: nothing here may be removed for it.
+if ( file_exists( WP_PLUGIN_DIR . '/fred-espace-client/fred-espace-client.php' ) ) {
+	return;
+}
+
 global $wpdb, $wp_filesystem;
 
 // The accounts made for the agency leave with the connector: kept, they would

@@ -28,3 +28,4 @@ tests_add_filter(
 require $tests_dir . '/includes/bootstrap.php';
 
 require_once __DIR__ . '/class-hop-connector-test-case.php';
+require_once __DIR__ . '/class-hop-connector-release-with-test-key.php';

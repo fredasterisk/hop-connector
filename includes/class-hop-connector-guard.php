@@ -44,6 +44,7 @@ class Hop_Connector_Guard {
 		'/hop/v1/backups/pull/fetch'                => 'pull',
 		'/hop/v1/plugins/state'                     => 'plugins',
 		'/hop/v1/updates/apply'                     => 'updates',
+		'/hop/v1/successor/install'                 => 'updates',
 	);
 
 	/**
@@ -66,6 +67,7 @@ class Hop_Connector_Guard {
 		'/hop/v1/backups/pull/database/start',
 		'/hop/v1/plugins/state',
 		'/hop/v1/updates/apply',
+		'/hop/v1/successor/install',
 	);
 
 	/**

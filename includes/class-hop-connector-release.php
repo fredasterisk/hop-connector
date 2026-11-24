@@ -119,9 +119,11 @@ class Hop_Connector_Release {
 	 *
 	 * @param  string $folder   Extracted plugin folder.
 	 * @param  string $current  Installed version.
+	 * @param  string $plugin   Name of the plugin the release must be: this
+	 *                          one, or its successor (fred-espace-client).
 	 * @return array{version:string,key:string}|WP_Error
 	 */
-	public static function verify( $folder, $current ) {
+	public static function verify( $folder, $current, $plugin = 'hop-connector' ) {
 		$folder   = rtrim( str_replace( '\\', '/', (string) $folder ), '/' );
 		$manifest = self::read( $folder . '/' . self::MANIFEST );
 		$envelope = json_decode( (string) self::read( $folder . '/' . self::SIGNATURE ), true );
@@ -143,7 +145,7 @@ class Hop_Connector_Release {
 		$version = is_array( $release ) && isset( $release['version'] ) ? (string) $release['version'] : '';
 		$files   = is_array( $release ) && isset( $release['files'] ) && is_array( $release['files'] ) ? $release['files'] : null;
 
-		if ( ! is_array( $release ) || 'hop-connector' !== ( $release['plugin'] ?? '' ) || '' === $version || null === $files ) {
+		if ( ! is_array( $release ) || ( $release['plugin'] ?? '' ) !== $plugin || '' === $version || null === $files ) {
 			return self::refuse( 'hop_release_bad_manifest', __( 'La liste signée des fichiers est illisible : la version n’est pas installée.', 'hop-connector' ) );
 		}
 
@@ -171,7 +173,7 @@ class Hop_Connector_Release {
 			}
 		}
 
-		if ( self::header_version( $folder . '/hop-connector.php' ) !== $version ) {
+		if ( self::header_version( $folder . '/' . $plugin . '.php' ) !== $version ) {
 			return self::refuse( 'hop_release_bad_manifest', __( 'La version signée ne correspond pas à celle de l’extension : elle n’est pas installée.', 'hop-connector' ) );
 		}
 
