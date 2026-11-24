@@ -142,11 +142,17 @@ class Fred_Espace_Client_Predecessor {
 		foreach ( (array) $rows as $row ) {
 			$name = (string) $row['option_name'];
 
-			if ( ! in_array( $name, self::LEFT, true ) ) {
+			if ( self::PREFIX . 'log' === $name ) {
+				self::merge_log( maybe_unserialize( (string) $row['option_value'] ) );
+				++$taken;
+			} elseif ( ! in_array( $name, self::LEFT, true ) ) {
+				// An option this plugin already holds is never replaced: the
+				// former plugin may still write after the takeover, in the
+				// request that installed this one.
 				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The value is copied as stored, without unserializing it.
 				$wpdb->query(
 					$wpdb->prepare(
-						"INSERT INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE option_value = VALUES(option_value), autoload = VALUES(autoload)",
+						"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s)",
 						'fred_espace_client_' . substr( $name, strlen( self::PREFIX ) ),
 						(string) $row['option_value'],
 						(string) $row['autoload']
@@ -165,6 +171,28 @@ class Fred_Espace_Client_Predecessor {
 		wp_cache_delete( 'notoptions', 'options' );
 
 		return $taken;
+	}
+
+	/**
+	 * Add the entries of the former journal to this plugin's, by date: the
+	 * history goes on, and a line the former plugin wrote after the takeover
+	 * joins it instead of replacing it.
+	 *
+	 * @param  mixed $former  Entries of the former journal.
+	 * @return void
+	 */
+	private static function merge_log( $former ) {
+		$current = get_option( Fred_Espace_Client_Log::OPTION, array() );
+		$entries = array_merge( is_array( $current ) ? $current : array(), is_array( $former ) ? $former : array() );
+
+		usort(
+			$entries,
+			static function ( $a, $b ) {
+				return (int) ( $b['time'] ?? 0 ) <=> (int) ( $a['time'] ?? 0 );
+			}
+		);
+
+		update_option( Fred_Espace_Client_Log::OPTION, array_slice( $entries, 0, Fred_Espace_Client_Log::KEEP ), false );
 	}
 
 	/**

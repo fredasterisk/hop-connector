@@ -116,12 +116,15 @@ class PredecessorTest extends Fred_Espace_Client_Test_Case {
 		// Its folder stays during the request that installed this plugin.
 		$this->assertDirectoryExists( $this->old_folder );
 
-		// What it wrote in its last request goes with it.
-		update_option( 'hop_connector_log', array( 'late' ) );
+		// What it wrote in its last request joins the journal, without replacing it.
+		update_option( 'hop_connector_log', array( array( 'time' => time() + 5, 'event' => 'successor_installed' ) ) );
 		Fred_Espace_Client_Predecessor::remove_folder();
 
 		$this->assertDirectoryDoesNotExist( $this->old_folder );
-		$this->assertSame( array( 'late' ), get_option( 'fred_espace_client_log' ) );
+		$this->assertSame(
+			array( 'successor_installed', 'took_over', 'paired', 'earlier' ),
+			array_column( get_option( 'fred_espace_client_log' ), 'event' )
+		);
 		$this->assertSame( array(), $this->former_options() );
 		$this->assertFalse( get_option( Fred_Espace_Client_Predecessor::OPTION_REMOVE ) );
 	}
@@ -144,6 +147,15 @@ class PredecessorTest extends Fred_Espace_Client_Test_Case {
 
 		$this->assertSame( self::KEY_ID, Fred_Espace_Client_Keys::active()['key_id'] );
 		$this->assertFalse( get_option( Fred_Espace_Client_Predecessor::OPTION_REMOVE ) );
+	}
+
+	public function test_an_option_already_held_is_never_replaced() {
+		$this->install_former_plugin();
+		update_option( 'fred_espace_client_allowed_ips', "203.0.113.1\n" );
+
+		Fred_Espace_Client_Predecessor::take_over();
+
+		$this->assertSame( "203.0.113.1\n", get_option( 'fred_espace_client_allowed_ips' ) );
 	}
 
 	public function test_taking_over_twice_changes_nothing_more() {
@@ -176,6 +188,14 @@ class PredecessorTest extends Fred_Espace_Client_Test_Case {
 			false
 		);
 		update_option( 'hop_connector_allowed_ips', "198.51.100.7\n" );
+		update_option(
+			'hop_connector_log',
+			array(
+				array( 'time' => time() - 10, 'event' => 'paired' ),
+				array( 'time' => time() - 20, 'event' => 'earlier' ),
+			),
+			false
+		);
 		update_option( 'hop_connector_nonce_deadbeef', '1999999999', false );
 		update_option( 'hop_connector_update_lock', time() + 600, false );
 		update_option( 'hop_connector_backup_dir', $this->suffix, false );
