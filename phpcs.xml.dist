@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
-<ruleset name="Hop Connector">
-	<description>WordPress Coding Standards for the Hop Connector plugin.</description>
+<ruleset name="Espace client">
+	<description>WordPress Coding Standards for the Espace client connector.</description>
 
 	<file>.</file>
 
@@ -29,7 +29,7 @@
 	<rule ref="WordPress.WP.I18n">
 		<properties>
 			<property name="text_domain" type="array">
-				<element value="hop-connector"/>
+				<element value="fred-espace-client"/>
 			</property>
 		</properties>
 	</rule>
@@ -38,7 +38,7 @@
 		<properties>
 			<property name="prefixes" type="array">
 				
-				<element value="hop_connector"/>
+				<element value="fred_espace_client"/>
 			</property>
 		</properties>
 	</rule>

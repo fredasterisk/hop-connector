@@ -2,7 +2,7 @@
 /**
  * Read-only inventory of core, plugins and themes.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -10,7 +10,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Builds the payloads returned by /status and /inventory.
  */
-class Hop_Connector_Inventory {
+class Fred_Espace_Client_Inventory {
 
 	/**
 	 * Lightweight site status.
@@ -19,16 +19,16 @@ class Hop_Connector_Inventory {
 	 */
 	public static function status() {
 		return array(
-			'connector_version' => HOP_CONNECTOR_VERSION,
+			'connector_version' => FRED_ESPACE_CLIENT_VERSION,
 			'wp_version'        => get_bloginfo( 'version' ),
 			'php_version'       => PHP_VERSION,
 			'site_url'          => home_url(),
 			'site_name'         => wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ),
 			'multisite'         => is_multisite(),
 			'maintenance'       => file_exists( ABSPATH . '.maintenance' ),
-			'rescue'            => defined( 'HOP_CONNECTOR_RESCUE' ),
-			'last_fatal'        => get_option( 'hop_connector_last_fatal', null ),
-			'signing'           => Hop_Connector_Keys::signing(),
+			'rescue'            => defined( 'FRED_ESPACE_CLIENT_RESCUE' ),
+			'last_fatal'        => get_option( 'fred_espace_client_last_fatal', null ),
+			'signing'           => Fred_Espace_Client_Keys::signing(),
 			'server_time'       => time(),
 		);
 	}

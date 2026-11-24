@@ -2,7 +2,7 @@
 /**
  * Switches set in wp-config.php, out of the platform's reach.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -14,10 +14,13 @@ defined( 'ABSPATH' ) || exit;
  * cannot change a constant: a site that cuts an action here keeps it cut,
  * whoever holds the platform's key.
  *
- *     define( 'HOP_CONNECTOR_DISABLED', true );           // Every signed request refused.
- *     define( 'HOP_CONNECTOR_DENY', 'login,restore' );    // Only these actions refused.
+ *     define( 'FRED_ESPACE_CLIENT_DISABLED', true );           // Every signed request refused.
+ *     define( 'FRED_ESPACE_CLIENT_DENY', 'login,restore' );    // Only these actions refused.
+ *
+ * The constants of the connector's former name, HOP_CONNECTOR_DISABLED and
+ * HOP_CONNECTOR_DENY, still count: a site that wrote them stays protected.
  */
-class Hop_Connector_Guard {
+class Fred_Espace_Client_Guard {
 
 	/**
 	 * Action of each signed route. A route left out (status, inventory,
@@ -44,7 +47,6 @@ class Hop_Connector_Guard {
 		'/hop/v1/backups/pull/fetch'                => 'pull',
 		'/hop/v1/plugins/state'                     => 'plugins',
 		'/hop/v1/updates/apply'                     => 'updates',
-		'/hop/v1/successor/install'                 => 'updates',
 	);
 
 	/**
@@ -67,7 +69,6 @@ class Hop_Connector_Guard {
 		'/hop/v1/backups/pull/database/start',
 		'/hop/v1/plugins/state',
 		'/hop/v1/updates/apply',
-		'/hop/v1/successor/install',
 	);
 
 	/**
@@ -77,36 +78,39 @@ class Hop_Connector_Guard {
 	 */
 	public static function actions() {
 		return array(
-			'login'    => __( 'connexion à wp-admin depuis la plateforme', 'hop-connector' ),
-			'restore'  => __( 'restauration de la base et retour à la version précédente d’une extension', 'hop-connector' ),
-			'database' => __( 'copie de la base avant les mises à jour', 'hop-connector' ),
-			'pull'     => __( 'tirage des fichiers et de la base pour la sauvegarde', 'hop-connector' ),
-			'plugins'  => __( 'activation, désactivation et suppression d’extensions', 'hop-connector' ),
-			'updates'  => __( 'application des mises à jour', 'hop-connector' ),
-			'pair'     => __( 'nouvel appairage depuis cet écran de réglages', 'hop-connector' ),
+			'login'    => __( 'connexion à wp-admin depuis la plateforme', 'fred-espace-client' ),
+			'restore'  => __( 'restauration de la base et retour à la version précédente d’une extension', 'fred-espace-client' ),
+			'database' => __( 'copie de la base avant les mises à jour', 'fred-espace-client' ),
+			'pull'     => __( 'tirage des fichiers et de la base pour la sauvegarde', 'fred-espace-client' ),
+			'plugins'  => __( 'activation, désactivation et suppression d’extensions', 'fred-espace-client' ),
+			'updates'  => __( 'application des mises à jour', 'fred-espace-client' ),
+			'pair'     => __( 'nouvel appairage depuis cet écran de réglages', 'fred-espace-client' ),
 		);
 	}
 
 	/**
-	 * Whether HOP_CONNECTOR_DISABLED cuts every signed request.
+	 * Whether FRED_ESPACE_CLIENT_DISABLED cuts every signed request.
 	 *
 	 * @return bool
 	 */
 	public static function disabled() {
-		return defined( 'HOP_CONNECTOR_DISABLED' ) && true === HOP_CONNECTOR_DISABLED;
+		return ( defined( 'FRED_ESPACE_CLIENT_DISABLED' ) && true === FRED_ESPACE_CLIENT_DISABLED )
+			|| ( defined( 'HOP_CONNECTOR_DISABLED' ) && true === HOP_CONNECTOR_DISABLED );
 	}
 
 	/**
-	 * Actions listed in HOP_CONNECTOR_DENY that the connector knows.
+	 * Actions listed in FRED_ESPACE_CLIENT_DENY that the connector knows.
 	 *
 	 * @return list<string>
 	 */
 	public static function denied() {
-		if ( ! defined( 'HOP_CONNECTOR_DENY' ) || ! is_string( HOP_CONNECTOR_DENY ) ) {
-			return array();
-		}
+		$listed = array();
 
-		$listed = array_map( 'trim', explode( ',', strtolower( HOP_CONNECTOR_DENY ) ) );
+		foreach ( array( 'FRED_ESPACE_CLIENT_DENY', 'HOP_CONNECTOR_DENY' ) as $constant ) {
+			if ( defined( $constant ) && is_string( constant( $constant ) ) ) {
+				$listed = array_merge( $listed, array_map( 'trim', explode( ',', strtolower( constant( $constant ) ) ) ) );
+			}
+		}
 
 		return array_values( array_intersect( array_keys( self::actions() ), $listed ) );
 	}
@@ -128,7 +132,20 @@ class Hop_Connector_Guard {
 	 * @return string|null
 	 */
 	public static function action_of( $route ) {
-		return self::ROUTES[ $route ] ?? null;
+		return self::ROUTES[ self::canonical( $route ) ] ?? null;
+	}
+
+	/**
+	 * A route under the connector's new address, written as under the former
+	 * one: both answer the same.
+	 *
+	 * @param  string $route  Signed route.
+	 * @return string
+	 */
+	private static function canonical( $route ) {
+		$prefix = '/' . Fred_Espace_Client_Rest::REST_NAMESPACE . '/';
+
+		return 0 === strpos( (string) $route, $prefix ) ? '/hop/v1/' . substr( (string) $route, strlen( $prefix ) ) : (string) $route;
 	}
 
 	/**
@@ -141,7 +158,7 @@ class Hop_Connector_Guard {
 		if ( self::disabled() ) {
 			return new WP_Error(
 				'hop_action_denied',
-				__( 'Le connecteur est coupé sur ce site par HOP_CONNECTOR_DISABLED, dans wp-config.php.', 'hop-connector' ),
+				__( 'Le connecteur est coupé sur ce site par FRED_ESPACE_CLIENT_DISABLED, dans wp-config.php.', 'fred-espace-client' ),
 				array(
 					'status' => 403,
 					'action' => 'all',
@@ -158,7 +175,7 @@ class Hop_Connector_Guard {
 		return new WP_Error(
 			'hop_action_denied',
 			/* translators: %s: action name. */
-			sprintf( __( 'L’action « %s » est coupée sur ce site par HOP_CONNECTOR_DENY, dans wp-config.php.', 'hop-connector' ), $action ),
+			sprintf( __( 'L’action « %s » est coupée sur ce site par FRED_ESPACE_CLIENT_DENY, dans wp-config.php.', 'fred-espace-client' ), $action ),
 			array(
 				'status' => 403,
 				'action' => $action,
@@ -175,6 +192,8 @@ class Hop_Connector_Guard {
 	 * @return bool
 	 */
 	public static function journaled( $route, $body ) {
+		$route = self::canonical( $route );
+
 		if ( '/hop/v1/backups/pull/files' === $route ) {
 			$payload = json_decode( $body, true );
 

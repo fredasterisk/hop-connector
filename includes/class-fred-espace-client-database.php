@@ -10,7 +10,7 @@
  * The same copy serves the platform's nightly backup of a site it cannot
  * reach otherwise: written here, taken away in pieces, then deleted.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Database snapshots.
  */
-class Hop_Connector_Database {
+class Fred_Espace_Client_Database {
 
 	const KEEP            = 3;
 	const ROWS_PER_GO     = 1000;
@@ -73,7 +73,7 @@ class Hop_Connector_Database {
 	 * The connector's own options: its key, nonces and login tokens never go
 	 * into a copy, and a restoration never brings back an older state of them.
 	 */
-	const OWN_OPTIONS = 'hop_connector_';
+	const OWN_OPTIONS = 'fred_espace_client_';
 
 	/**
 	 * Export every table of this WordPress installation in one request, step
@@ -108,7 +108,7 @@ class Hop_Connector_Database {
 	 */
 	public static function start( $kind = 'db' ) {
 		$pulled = 'pull' === $kind;
-		$root   = Hop_Connector_Updater::backup_root();
+		$root   = Fred_Espace_Client_Updater::backup_root();
 
 		if ( is_wp_error( $root ) ) {
 			return $root;
@@ -118,10 +118,10 @@ class Hop_Connector_Database {
 
 		if ( $pulled ) {
 			// Renewed at each step, for as long as the copy takes.
-			$held = Hop_Connector_Updater::acquire_lock( self::LOCK_SECONDS );
+			$held = Fred_Espace_Client_Updater::acquire_lock( self::LOCK_SECONDS );
 
 			if ( false === $held ) {
-				return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'hop-connector' ), array( 'status' => 409 ) );
+				return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'fred-espace-client' ), array( 'status' => 409 ) );
 			}
 
 			// A copy, a part or a progress file left behind by an earlier night.
@@ -137,7 +137,7 @@ class Hop_Connector_Database {
 		if ( ! $file ) {
 			self::give_back( $held );
 
-			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		gzwrite( $file, "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n" );
@@ -158,7 +158,7 @@ class Hop_Connector_Database {
 		if ( ! self::save_job( $root, $snapshot_id, $job ) ) {
 			self::abandon( $root, $snapshot_id, $held );
 
-			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		return self::advance( $snapshot_id, $kind );
@@ -174,11 +174,11 @@ class Hop_Connector_Database {
 	 *                                       tables, rows, size, and sha256 for a pull).
 	 */
 	public static function advance( $snapshot_id, $kind = 'db' ) {
-		$root = Hop_Connector_Updater::backup_root();
+		$root = Fred_Espace_Client_Updater::backup_root();
 		$job  = ! is_wp_error( $root ) && self::is_id( (string) $snapshot_id, $kind ) ? self::load_job( $root, $snapshot_id ) : null;
 
 		if ( null === $job ) {
-			return new WP_Error( 'hop_no_backup', __( 'Copie de la base introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+			return new WP_Error( 'hop_no_backup', __( 'Copie de la base introuvable.', 'fred-espace-client' ), array( 'status' => 404 ) );
 		}
 
 		self::extend_time();
@@ -195,7 +195,7 @@ class Hop_Connector_Database {
 			$file = gzopen( $part, 'ab6' );
 
 			if ( ! $file ) {
-				throw new RuntimeException( __( 'fichier illisible', 'hop-connector' ) );
+				throw new RuntimeException( __( 'fichier illisible', 'fred-espace-client' ) );
 			}
 
 			try {
@@ -232,7 +232,7 @@ class Hop_Connector_Database {
 		} catch ( Throwable $exception ) {
 			self::abandon( $root, $snapshot_id, $job['held'] );
 
-			return new WP_Error( 'hop_backup_failed', __( 'La copie de la base a échoué : ', 'hop-connector' ) . $exception->getMessage(), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_backup_failed', __( 'La copie de la base a échoué : ', 'fred-espace-client' ) . $exception->getMessage(), array( 'status' => 500 ) );
 		}
 
 		if ( $job['table'] >= $count ) {
@@ -241,12 +241,12 @@ class Hop_Connector_Database {
 
 		clearstatcache( true, $part );
 		$job['bytes'] = (int) filesize( $part );
-		$job['held']  = false === $job['held'] ? false : Hop_Connector_Updater::renew_lock( $job['held'], self::LOCK_SECONDS );
+		$job['held']  = false === $job['held'] ? false : Fred_Espace_Client_Updater::renew_lock( $job['held'], self::LOCK_SECONDS );
 
 		if ( ! self::save_job( $root, $snapshot_id, $job ) ) {
 			self::abandon( $root, $snapshot_id, $job['held'] );
 
-			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		return array(
@@ -273,7 +273,7 @@ class Hop_Connector_Database {
 		if ( ! rename( self::part_path( $root, $snapshot_id ), $path ) ) {
 			self::abandon( $root, $snapshot_id, $job['held'] );
 
-			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_backup_failed', __( 'Impossible d\'écrire la copie de la base.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		wp_delete_file( self::job_path( $root, $snapshot_id ) );
@@ -309,7 +309,7 @@ class Hop_Connector_Database {
 		$path = self::path( $snapshot_id, 'pull' );
 
 		if ( null === $path ) {
-			return new WP_Error( 'hop_no_backup', __( 'Copie de la base introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+			return new WP_Error( 'hop_no_backup', __( 'Copie de la base introuvable.', 'fred-espace-client' ), array( 'status' => 404 ) );
 		}
 
 		$length = max( 1, min( (int) $length, self::CHUNK ) );
@@ -317,7 +317,7 @@ class Hop_Connector_Database {
 		$bytes = file_get_contents( $path, false, null, max( 0, (int) $offset ), $length );
 
 		if ( false === $bytes ) {
-			return new WP_Error( 'hop_backup_failed', __( 'Impossible de lire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_backup_failed', __( 'Impossible de lire la copie de la base.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		return $bytes;
@@ -375,14 +375,14 @@ class Hop_Connector_Database {
 		$path = self::path( (string) $snapshot_id );
 
 		if ( null === $path ) {
-			return new WP_Error( 'hop_no_backup', __( 'Copie de la base introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+			return new WP_Error( 'hop_no_backup', __( 'Copie de la base introuvable.', 'fred-espace-client' ), array( 'status' => 404 ) );
 		}
 
-		$root = Hop_Connector_Updater::backup_root();
-		$held = Hop_Connector_Updater::acquire_lock( self::LOCK_SECONDS );
+		$root = Fred_Espace_Client_Updater::backup_root();
+		$held = Fred_Espace_Client_Updater::acquire_lock( self::LOCK_SECONDS );
 
 		if ( false === $held ) {
-			return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'hop-connector' ), array( 'status' => 409 ) );
+			return new WP_Error( 'hop_locked', __( 'Une mise à jour est déjà en cours sur ce site.', 'fred-espace-client' ), array( 'status' => 409 ) );
 		}
 
 		self::extend_time();
@@ -396,7 +396,7 @@ class Hop_Connector_Database {
 			wp_delete_file( $sql );
 			self::give_back( $held );
 
-			return new WP_Error( 'hop_restore_failed', __( 'Impossible de lire la copie de la base.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_restore_failed', __( 'Impossible de lire la copie de la base.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		self::protect( $sql );
@@ -414,7 +414,7 @@ class Hop_Connector_Database {
 			wp_delete_file( $sql );
 			self::give_back( $held );
 
-			return new WP_Error( 'hop_restore_failed', __( 'Impossible d\'écrire la restauration en cours.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_restore_failed', __( 'Impossible d\'écrire la restauration en cours.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		return self::advance_restore( $restore_id );
@@ -432,11 +432,11 @@ class Hop_Connector_Database {
 	public static function advance_restore( $restore_id ) {
 		global $wpdb;
 
-		$root = Hop_Connector_Updater::backup_root();
+		$root = Fred_Espace_Client_Updater::backup_root();
 		$job  = ! is_wp_error( $root ) && 1 === preg_match( '/^restore-\d{14}-[a-f0-9]{16}$/', (string) $restore_id ) ? self::load_restore( $root, $restore_id ) : null;
 
 		if ( null === $job ) {
-			return new WP_Error( 'hop_no_backup', __( 'Restauration introuvable.', 'hop-connector' ), array( 'status' => 404 ) );
+			return new WP_Error( 'hop_no_backup', __( 'Restauration introuvable.', 'fred-espace-client' ), array( 'status' => 404 ) );
 		}
 
 		self::extend_time();
@@ -452,7 +452,7 @@ class Hop_Connector_Database {
 			$handle = fopen( $sql, 'rb' );
 
 			if ( false === $handle || 0 !== fseek( $handle, $job['offset'] ) ) {
-				throw new RuntimeException( __( 'copie illisible', 'hop-connector' ) );
+				throw new RuntimeException( __( 'copie illisible', 'fred-espace-client' ) );
 			}
 
 			try {
@@ -478,7 +478,7 @@ class Hop_Connector_Database {
 						$create = self::next_line( $handle );
 
 						if ( null === $create || 0 !== strpos( $create, 'CREATE TABLE `' ) ) {
-							throw new RuntimeException( __( 'copie illisible', 'hop-connector' ) );
+							throw new RuntimeException( __( 'copie illisible', 'fred-espace-client' ) );
 						}
 
 						$statements = self::table_statements( $line, $create, $job );
@@ -511,7 +511,7 @@ class Hop_Connector_Database {
 
 			return new WP_Error(
 				'hop_restore_failed',
-				__( 'La restauration de la base s\'est arrêtée en cours de route : ', 'hop-connector' ) . $exception->getMessage(),
+				__( 'La restauration de la base s\'est arrêtée en cours de route : ', 'fred-espace-client' ) . $exception->getMessage(),
 				array(
 					'status'     => 500,
 					'statements' => $job['statements'],
@@ -527,18 +527,18 @@ class Hop_Connector_Database {
 			self::give_back( $job['held'] );
 			wp_cache_flush();
 
-			Hop_Connector_Log::record(
+			Fred_Espace_Client_Log::record(
 				'restored',
 				array(
 					'result' => 'restored',
 					'note'   => $job['backup_id'],
 				)
 			);
-			Hop_Connector_Log::notify(
-				__( 'La base de données a été restaurée', 'hop-connector' ),
+			Fred_Espace_Client_Log::notify(
+				__( 'La base de données a été restaurée', 'fred-espace-client' ),
 				sprintf(
 					/* translators: %s: identifier of the copy. */
-					__( "La base de données de ce site vient d’être remise dans l’état de la copie %s, à la demande de la plateforme. Ce qui a été écrit dans le site depuis cette copie n’y est plus.\n\nSi cette restauration n’était pas prévue : déconnecter le site dans Réglages > Espace client, puis prévenir l’agence.", 'hop-connector' ),
+					__( "La base de données de ce site vient d’être remise dans l’état de la copie %s, à la demande de la plateforme. Ce qui a été écrit dans le site depuis cette copie n’y est plus.\n\nSi cette restauration n’était pas prévue : déconnecter le site dans Réglages > Espace client, puis prévenir l’agence.", 'fred-espace-client' ),
 					$job['backup_id']
 				)
 			);
@@ -550,12 +550,12 @@ class Hop_Connector_Database {
 			);
 		}
 
-		$job['held'] = false === $job['held'] ? false : Hop_Connector_Updater::renew_lock( $job['held'], self::LOCK_SECONDS );
+		$job['held'] = false === $job['held'] ? false : Fred_Espace_Client_Updater::renew_lock( $job['held'], self::LOCK_SECONDS );
 
 		if ( ! self::write_json( self::restore_job_path( $root, $restore_id ), $job ) ) {
 			self::abandon_restore( $root, $restore_id, $job );
 
-			return new WP_Error( 'hop_restore_failed', __( 'Impossible d\'écrire la restauration en cours.', 'hop-connector' ), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_restore_failed', __( 'Impossible d\'écrire la restauration en cours.', 'fred-espace-client' ), array( 'status' => 500 ) );
 		}
 
 		return array(
@@ -582,7 +582,7 @@ class Hop_Connector_Database {
 		$table = self::table_of( $create );
 
 		if ( null === $table || self::table_of( $drop ) !== $table ) {
-			throw new RuntimeException( __( 'copie illisible', 'hop-connector' ) );
+			throw new RuntimeException( __( 'copie illisible', 'fred-espace-client' ) );
 		}
 
 		if ( in_array( $table, $job['in_place'], true ) || false !== stripos( $create, 'FOREIGN KEY' ) ) {
@@ -873,7 +873,7 @@ class Hop_Connector_Database {
 	 * @return list<array{backup_id: string, size: int, created: int}>
 	 */
 	public static function snapshots() {
-		$root = Hop_Connector_Updater::backup_root();
+		$root = Fred_Espace_Client_Updater::backup_root();
 
 		if ( is_wp_error( $root ) ) {
 			return array();
@@ -1102,7 +1102,7 @@ class Hop_Connector_Database {
 			return null;
 		}
 
-		$root = Hop_Connector_Updater::backup_root();
+		$root = Fred_Espace_Client_Updater::backup_root();
 
 		if ( is_wp_error( $root ) || ! is_file( $root . '/' . $snapshot_id . '.sql.gz' ) ) {
 			return null;
@@ -1241,14 +1241,14 @@ class Hop_Connector_Database {
 		}
 
 		if ( $size < $bytes ) {
-			throw new RuntimeException( __( 'la copie en cours a perdu une partie', 'hop-connector' ) );
+			throw new RuntimeException( __( 'la copie en cours a perdu une partie', 'fred-espace-client' ) );
 		}
 
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- ftruncate needs a handle.
 		$handle = fopen( $path, 'r+' );
 
 		if ( false === $handle || ! ftruncate( $handle, $bytes ) ) {
-			throw new RuntimeException( __( 'fichier illisible', 'hop-connector' ) );
+			throw new RuntimeException( __( 'fichier illisible', 'fred-espace-client' ) );
 		}
 
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Handle opened above.
@@ -1277,7 +1277,7 @@ class Hop_Connector_Database {
 	 */
 	private static function give_back( $held ) {
 		if ( false !== $held ) {
-			Hop_Connector_Updater::release_lock( $held );
+			Fred_Espace_Client_Updater::release_lock( $held );
 		}
 	}
 
@@ -1287,7 +1287,7 @@ class Hop_Connector_Database {
 	 * @return void
 	 */
 	private static function prune() {
-		$root = Hop_Connector_Updater::backup_root();
+		$root = Fred_Espace_Client_Updater::backup_root();
 
 		foreach ( array_slice( self::snapshots(), self::KEEP ) as $old ) {
 			wp_delete_file( $root . '/' . $old['backup_id'] . '.sql.gz' );
@@ -1303,11 +1303,11 @@ class Hop_Connector_Database {
 	public static function purge_expired() {
 		// A site that never took a copy has no directory to look into, and
 		// backup_root() would create one.
-		if ( ! get_option( 'hop_connector_backup_dir' ) ) {
+		if ( ! get_option( 'fred_espace_client_backup_dir' ) ) {
 			return;
 		}
 
-		$root = Hop_Connector_Updater::backup_root();
+		$root = Fred_Espace_Client_Updater::backup_root();
 
 		foreach ( self::snapshots() as $snapshot ) {
 			if ( $snapshot['created'] < time() - self::MAX_AGE ) {
@@ -1353,11 +1353,11 @@ class Hop_Connector_Database {
 	 * @return void
 	 */
 	public static function purge_all() {
-		if ( ! get_option( 'hop_connector_backup_dir' ) ) {
+		if ( ! get_option( 'fred_espace_client_backup_dir' ) ) {
 			return;
 		}
 
-		$root = Hop_Connector_Updater::backup_root();
+		$root = Fred_Espace_Client_Updater::backup_root();
 
 		if ( is_wp_error( $root ) ) {
 			return;

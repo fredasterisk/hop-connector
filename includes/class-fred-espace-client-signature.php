@@ -8,15 +8,15 @@
  * dependency on purpose: the platform test suite loads it to prove both
  * sides compute the same signature.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
-if ( ! class_exists( 'Hop_Connector_Signature' ) ) {
+if ( ! class_exists( 'Fred_Espace_Client_Signature' ) ) {
 
 	/**
 	 * Builds and verifies request signatures.
 	 */
-	class Hop_Connector_Signature {
+	class Fred_Espace_Client_Signature {
 
 		/**
 		 * Maximum clock difference accepted between platform and site, in seconds.

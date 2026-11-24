@@ -51,7 +51,7 @@ jobs:
         image: mysql:8.0
         env:
           MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
-          MYSQL_DATABASE: hop_connector_tests
+          MYSQL_DATABASE: fred_espace_client_tests
         ports:
           - 3306:3306
         options: >-
@@ -64,7 +64,7 @@ jobs:
       WP_TESTS_DB_HOST: 127.0.0.1:3306
       WP_TESTS_DB_USER: root
       WP_TESTS_DB_PASSWORD: ''
-      WP_TESTS_DB_NAME: hop_connector_tests
+      WP_TESTS_DB_NAME: fred_espace_client_tests
 
     steps:
       - name: Checkout

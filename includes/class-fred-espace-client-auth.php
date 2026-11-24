@@ -2,7 +2,7 @@
 /**
  * Authentication of signed requests coming from the platform.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -10,11 +10,11 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Permission callbacks for the REST routes.
  */
-class Hop_Connector_Auth {
+class Fred_Espace_Client_Auth {
 
-	const OPTION_ALLOWED_IPS = 'hop_connector_allowed_ips';
+	const OPTION_ALLOWED_IPS = 'fred_espace_client_allowed_ips';
 
-	const NONCE_PREFIX = 'hop_connector_nonce_';
+	const NONCE_PREFIX = 'fred_espace_client_nonce_';
 
 	const NONCE_TTL = 300;
 
@@ -101,11 +101,11 @@ class Hop_Connector_Auth {
 			return self::deny( 'hop_bad_signature' );
 		}
 
-		if ( ! Hop_Connector_Signature::is_fresh( $timestamp, time() ) ) {
+		if ( ! Fred_Espace_Client_Signature::is_fresh( $timestamp, time() ) ) {
 			return self::deny( 'hop_clock_skew' );
 		}
 
-		$key = Hop_Connector_Keys::find( $key_id );
+		$key = Fred_Espace_Client_Keys::find( $key_id );
 
 		if ( ! $key || ( $key['pending'] && ! $allow_pending ) ) {
 			return self::deny( 'hop_bad_signature' );
@@ -115,8 +115,8 @@ class Hop_Connector_Auth {
 		// secret survives only in a pending key, for the handshake that
 		// replaces it with that public key within 15 minutes.
 		$signed = $key['pending']
-			? Hop_Connector_Signature::verify( $signature, $key['secret'], $method, $route, $timestamp, $nonce, $key_id, $body )
-			: Hop_Connector_Signature::verify_ed25519( $signature, $key['public_key'], $method, $route, $timestamp, $nonce, $key_id, $body );
+			? Fred_Espace_Client_Signature::verify( $signature, $key['secret'], $method, $route, $timestamp, $nonce, $key_id, $body )
+			: Fred_Espace_Client_Signature::verify_ed25519( $signature, $key['public_key'], $method, $route, $timestamp, $nonce, $key_id, $body );
 
 		if ( ! $signed ) {
 			return self::deny( 'hop_bad_signature' );
@@ -128,10 +128,10 @@ class Hop_Connector_Auth {
 
 		// Checked once the request is known to come from the platform: the
 		// switches of wp-config.php are no business of anyone else.
-		$refusal = Hop_Connector_Guard::refusal( $route );
+		$refusal = Fred_Espace_Client_Guard::refusal( $route );
 
 		if ( null !== $refusal ) {
-			Hop_Connector_Log::record(
+			Fred_Espace_Client_Log::record(
 				'denied',
 				array(
 					'route'  => $route,
@@ -143,8 +143,8 @@ class Hop_Connector_Auth {
 			return $refusal;
 		}
 
-		if ( Hop_Connector_Guard::journaled( $route, $body ) ) {
-			Hop_Connector_Log::record(
+		if ( Fred_Espace_Client_Guard::journaled( $route, $body ) ) {
+			Fred_Espace_Client_Log::record(
 				'request',
 				array(
 					'route'  => $route,
@@ -190,14 +190,14 @@ class Hop_Connector_Auth {
 	private static function deny( $reason ) {
 		if ( defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Opt-in diagnostic, never exposed to the caller.
-			error_log( 'Hop Connector: request rejected (' . $reason . ').' );
+			error_log( 'Espace client: request rejected (' . $reason . ').' );
 		}
 
 		$code = in_array( $reason, array( 'hop_clock_skew', 'hop_ip_denied' ), true ) ? $reason : 'hop_unauthorized';
 
 		return new WP_Error(
 			$code,
-			__( 'Requête non autorisée.', 'hop-connector' ),
+			__( 'Requête non autorisée.', 'fred-espace-client' ),
 			array(
 				'status'      => 401,
 				'server_time' => time(),
@@ -227,7 +227,7 @@ class Hop_Connector_Auth {
 		 *
 		 * @param  string  $remote  Client IP address.
 		 */
-		$remote = (string) apply_filters( 'hop_connector_client_ip', $remote );
+		$remote = (string) apply_filters( 'fred_espace_client_client_ip', $remote );
 
 		return in_array( $remote, $allowed, true );
 	}

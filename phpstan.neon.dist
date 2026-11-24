@@ -2,7 +2,7 @@ parameters:
 	level: 5
 	phpVersion: 70400
 	paths:
-		- hop-connector.php
+		- fred-espace-client.php
 		- uninstall.php
 		- includes
 	bootstrapFiles:
@@ -10,14 +10,14 @@ parameters:
 	scanFiles:
 		- vendor/php-stubs/wp-cli-stubs/wp-cli-stubs.php
 	dynamicConstantNames:
-		- HOP_CONNECTOR_DENY
-		- HOP_CONNECTOR_DISABLED
-		- HOP_CONNECTOR_RESCUE
+		- FRED_ESPACE_CLIENT_DENY
+		- FRED_ESPACE_CLIENT_DISABLED
+		- FRED_ESPACE_CLIENT_RESCUE
 	treatPhpDocTypesAsCertain: false
 	ignoreErrors:
 		# The constant itself, on purpose: wp_is_file_mod_allowed() passes
 		# through a filter that any plugin could use to lift the switch.
 		-
 			identifier: phpstanWP.wpConstant.fetch
-			path: includes/class-hop-connector-admin.php
+			path: includes/class-fred-espace-client-admin.php
 			count: 1

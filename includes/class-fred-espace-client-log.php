@@ -2,7 +2,7 @@
 /**
  * Journal kept on the site, and notices sent to its administrator.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -14,9 +14,9 @@ defined( 'ABSPATH' ) || exit;
  * leave it out, and a restoration puts it back as it was just before, so an
  * old copy cannot erase what happened since.
  */
-class Hop_Connector_Log {
+class Fred_Espace_Client_Log {
 
-	const OPTION = 'hop_connector_log';
+	const OPTION = 'fred_espace_client_log';
 
 	const KEEP = 200;
 
@@ -92,9 +92,9 @@ class Hop_Connector_Log {
 
 		$message .= "\n\n" . sprintf(
 			/* translators: 1: site address, 2: settings page address. */
-			__( "Site : %1\$s\nJournal du connecteur : %2\$s", 'hop-connector' ),
+			__( "Site : %1\$s\nJournal du connecteur : %2\$s", 'fred-espace-client' ),
 			home_url(),
-			admin_url( 'options-general.php?page=hop-connector' )
+			admin_url( 'options-general.php?page=fred-espace-client' )
 		);
 
 		wp_mail( $to, '[' . $site . '] ' . $subject, $message );

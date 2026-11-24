@@ -2,11 +2,11 @@
 /**
  * Constants the connector defines at load time, for PHPStan.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 // phpcs:disable -- Read by PHPStan only.
 
-define( 'HOP_CONNECTOR_VERSION', '0.0.0' );
-define( 'HOP_CONNECTOR_DIR', __DIR__ . '/../' );
-define( 'HOP_CONNECTOR_FILE', __DIR__ . '/../hop-connector.php' );
+define( 'FRED_ESPACE_CLIENT_VERSION', '0.0.0' );
+define( 'FRED_ESPACE_CLIENT_DIR', __DIR__ . '/../' );
+define( 'FRED_ESPACE_CLIENT_FILE', __DIR__ . '/../fred-espace-client.php' );

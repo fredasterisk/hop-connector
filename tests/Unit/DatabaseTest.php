@@ -5,7 +5,7 @@
  * These tests run real CREATE, DROP and RENAME statements: they leave the
  * transaction of the WordPress test case, and clean up after themselves.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 // phpcs:disable -- Test code, never loaded by WordPress.
@@ -13,7 +13,7 @@
 /**
  * @group database
  */
-class DatabaseTest extends Hop_Connector_Test_Case {
+class DatabaseTest extends Fred_Espace_Client_Test_Case {
 
 	/**
 	 * @var string
@@ -40,15 +40,15 @@ class DatabaseTest extends Hop_Connector_Test_Case {
 	public function tear_down() {
 		global $wpdb;
 
-		$this->set_step_seconds( Hop_Connector_Database::STEP_SECONDS );
+		$this->set_step_seconds( Fred_Espace_Client_Database::STEP_SECONDS );
 		$wpdb->query( "DROP TABLE IF EXISTS `{$this->table}`" );
 
 		foreach ( (array) $wpdb->get_col( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $wpdb->base_prefix . 'hop_' ) . '%' ) ) as $left ) {
 			$wpdb->query( "DROP TABLE IF EXISTS `{$left}`" );
 		}
 
-		Hop_Connector_Database::purge_all();
-		delete_option( Hop_Connector_Updater::OPTION_LOCK );
+		Fred_Espace_Client_Database::purge_all();
+		delete_option( Fred_Espace_Client_Updater::OPTION_LOCK );
 		update_option( 'blogname', 'Test Blog' );
 		// The DDL above already committed this test's writes: commit the
 		// cleanup too, or the rollback of the test case would undo it.
@@ -58,13 +58,13 @@ class DatabaseTest extends Hop_Connector_Test_Case {
 	}
 
 	public function test_a_restoration_brings_back_the_rows_of_the_copy() {
-		$copy = Hop_Connector_Database::snapshot();
+		$copy = Fred_Espace_Client_Database::snapshot();
 
 		$this->assertSame( 'done', $copy['status'] );
 
 		$this->change_everything();
 
-		$restored = Hop_Connector_Database::restore( $copy['backup_id'] );
+		$restored = Fred_Espace_Client_Database::restore( $copy['backup_id'] );
 
 		$this->assertSame( 'restored', $restored['status'] );
 		$this->assertSame( array( 'un', 'deux', 'trois' ), $this->labels() );
@@ -74,41 +74,41 @@ class DatabaseTest extends Hop_Connector_Test_Case {
 
 	public function test_the_connectors_own_options_never_go_into_a_copy() {
 		$this->pair();
-		$copy = Hop_Connector_Database::snapshot();
+		$copy = Fred_Espace_Client_Database::snapshot();
 		$sql  = $this->read_copy( $copy['backup_id'] );
 
 		$this->assertStringContainsString( 'blogname', $sql );
-		$this->assertStringNotContainsString( Hop_Connector_Keys::OPTION_ACTIVE, $sql );
+		$this->assertStringNotContainsString( Fred_Espace_Client_Keys::OPTION_ACTIVE, $sql );
 	}
 
 	public function test_a_restoration_keeps_the_site_connected() {
 		$this->pair();
-		$copy = Hop_Connector_Database::snapshot();
+		$copy = Fred_Espace_Client_Database::snapshot();
 
-		Hop_Connector_Database::restore( $copy['backup_id'] );
+		Fred_Espace_Client_Database::restore( $copy['backup_id'] );
 
 		wp_cache_flush();
-		$this->assertSame( self::KEY_ID, Hop_Connector_Keys::active()['key_id'] );
+		$this->assertSame( self::KEY_ID, Fred_Espace_Client_Keys::active()['key_id'] );
 		$this->assertSame( 200, $this->dispatch( $this->signed_request( 'GET', '/hop/v1/status' ) )->get_status() );
 	}
 
 	public function test_a_key_revoked_after_the_copy_stays_revoked() {
 		$this->pair();
-		$copy = Hop_Connector_Database::snapshot();
-		Hop_Connector_Keys::revoke();
+		$copy = Fred_Espace_Client_Database::snapshot();
+		Fred_Espace_Client_Keys::revoke();
 
-		Hop_Connector_Database::restore( $copy['backup_id'] );
+		Fred_Espace_Client_Database::restore( $copy['backup_id'] );
 
 		wp_cache_flush();
-		$this->assertNull( Hop_Connector_Keys::active() );
+		$this->assertNull( Fred_Espace_Client_Keys::active() );
 	}
 
 	public function test_until_the_last_step_the_site_keeps_its_current_tables() {
 		$this->set_step_seconds( 0 );
-		$copy = Hop_Connector_Database::snapshot();
+		$copy = Fred_Espace_Client_Database::snapshot();
 		$this->change_everything();
 
-		$step  = Hop_Connector_Database::start_restore( $copy['backup_id'] );
+		$step  = Fred_Espace_Client_Database::start_restore( $copy['backup_id'] );
 		$steps = 1;
 
 		$this->assertSame( 'running', $step['status'] );
@@ -118,7 +118,7 @@ class DatabaseTest extends Hop_Connector_Test_Case {
 			$this->assertSame( array( 'quatre' ), $this->labels() );
 			$this->assertSame( 'Après', $this->fresh_option( 'blogname' ) );
 
-			$step = Hop_Connector_Database::advance_restore( $step['restore_id'] );
+			$step = Fred_Espace_Client_Database::advance_restore( $step['restore_id'] );
 			++$steps;
 		}
 
@@ -130,18 +130,18 @@ class DatabaseTest extends Hop_Connector_Test_Case {
 	public function test_a_copy_in_steps_keeps_every_row_of_a_large_table() {
 		$labels = array();
 
-		for ( $i = 1; $i <= Hop_Connector_Database::ROWS_PER_GO * 2 + 7; $i++ ) {
+		for ( $i = 1; $i <= Fred_Espace_Client_Database::ROWS_PER_GO * 2 + 7; $i++ ) {
 			$labels[] = 'ligne ' . $i;
 		}
 
 		$this->insert_items( $labels );
 		$this->set_step_seconds( 0 );
 
-		$step  = Hop_Connector_Database::start();
+		$step  = Fred_Espace_Client_Database::start();
 		$steps = 1;
 
 		while ( 'running' === $step['status'] ) {
-			$step = Hop_Connector_Database::advance( $step['backup_id'] );
+			$step = Fred_Espace_Client_Database::advance( $step['backup_id'] );
 			++$steps;
 		}
 
@@ -150,14 +150,14 @@ class DatabaseTest extends Hop_Connector_Test_Case {
 
 		$expected = $this->labels();
 		$this->change_everything();
-		Hop_Connector_Database::restore( $step['backup_id'] );
+		Fred_Espace_Client_Database::restore( $step['backup_id'] );
 
 		$this->assertSame( $expected, $this->labels() );
-		$this->assertCount( Hop_Connector_Database::ROWS_PER_GO * 2 + 10, $expected );
+		$this->assertCount( Fred_Espace_Client_Database::ROWS_PER_GO * 2 + 10, $expected );
 	}
 
 	public function test_a_statement_that_fails_leaves_the_current_tables_untouched() {
-		$copy = Hop_Connector_Database::snapshot();
+		$copy = Fred_Espace_Client_Database::snapshot();
 		$path = $this->copy_path( $copy['backup_id'] );
 		$sql  = $this->read_copy( $copy['backup_id'] );
 
@@ -168,56 +168,56 @@ class DatabaseTest extends Hop_Connector_Test_Case {
 
 		$this->change_everything();
 
-		$result = Hop_Connector_Database::restore( $copy['backup_id'] );
+		$result = Fred_Espace_Client_Database::restore( $copy['backup_id'] );
 
 		$this->assertWPError( $result );
 		$this->assertSame( 'hop_restore_failed', $result->get_error_code() );
 		$this->assertSame( array( 'quatre' ), $this->labels() );
 		$this->assertSame( 'Après', $this->fresh_option( 'blogname' ) );
 		$this->assertSame( array(), $this->temporary_tables() );
-		$this->assertFalse( get_option( Hop_Connector_Updater::OPTION_LOCK ) );
+		$this->assertFalse( get_option( Fred_Espace_Client_Updater::OPTION_LOCK ) );
 	}
 
 	public function test_no_restoration_while_an_update_holds_the_lock() {
-		$copy = Hop_Connector_Database::snapshot();
-		Hop_Connector_Updater::acquire_lock();
+		$copy = Fred_Espace_Client_Database::snapshot();
+		Fred_Espace_Client_Updater::acquire_lock();
 
-		$result = Hop_Connector_Database::start_restore( $copy['backup_id'] );
+		$result = Fred_Espace_Client_Database::start_restore( $copy['backup_id'] );
 
 		$this->assertSame( 'hop_locked', $result->get_error_code() );
 	}
 
 	public function test_an_unknown_or_crafted_identifier_finds_no_copy() {
 		foreach ( array( 'db-20260101000000-0000000000000000', '../wp-config', 'pull-x' ) as $id ) {
-			$this->assertSame( 'hop_no_backup', Hop_Connector_Database::start_restore( $id )->get_error_code(), $id );
+			$this->assertSame( 'hop_no_backup', Fred_Espace_Client_Database::start_restore( $id )->get_error_code(), $id );
 		}
 
-		$this->assertSame( 'hop_no_backup', Hop_Connector_Database::advance_restore( 'restore-../../x' )->get_error_code() );
+		$this->assertSame( 'hop_no_backup', Fred_Espace_Client_Database::advance_restore( 'restore-../../x' )->get_error_code() );
 	}
 
 	public function test_a_pulled_copy_is_read_in_pieces_then_discarded() {
-		$copy = Hop_Connector_Database::snapshot( 'pull' );
+		$copy = Fred_Espace_Client_Database::snapshot( 'pull' );
 
 		$this->assertSame( 'done', $copy['status'] );
 
 		$bytes = '';
 
 		for ( $offset = 0; $offset < $copy['size']; $offset += 1000 ) {
-			$bytes .= Hop_Connector_Database::chunk( $copy['backup_id'], $offset, 1000 );
+			$bytes .= Fred_Espace_Client_Database::chunk( $copy['backup_id'], $offset, 1000 );
 		}
 
 		$this->assertSame( $copy['sha256'], hash( 'sha256', $bytes ) );
-		$this->assertFalse( get_option( Hop_Connector_Updater::OPTION_LOCK ), 'The nightly copy gives the lock back.' );
+		$this->assertFalse( get_option( Fred_Espace_Client_Updater::OPTION_LOCK ), 'The nightly copy gives the lock back.' );
 
-		Hop_Connector_Database::discard( $copy['backup_id'] );
+		Fred_Espace_Client_Database::discard( $copy['backup_id'] );
 
-		$this->assertWPError( Hop_Connector_Database::chunk( $copy['backup_id'], 0, 10 ) );
+		$this->assertWPError( Fred_Espace_Client_Database::chunk( $copy['backup_id'], 0, 10 ) );
 	}
 
 	public function test_a_pulled_copy_cannot_be_restored_as_a_copy_before_updates() {
-		$copy = Hop_Connector_Database::snapshot( 'pull' );
+		$copy = Fred_Espace_Client_Database::snapshot( 'pull' );
 
-		$this->assertSame( 'hop_no_backup', Hop_Connector_Database::start_restore( $copy['backup_id'] )->get_error_code() );
+		$this->assertSame( 'hop_no_backup', Fred_Espace_Client_Database::start_restore( $copy['backup_id'] )->get_error_code() );
 	}
 
 	/**
@@ -289,7 +289,7 @@ class DatabaseTest extends Hop_Connector_Test_Case {
 	 * @return string
 	 */
 	private function copy_path( $backup_id ) {
-		return Hop_Connector_Updater::backup_root() . '/' . $backup_id . '.sql.gz';
+		return Fred_Espace_Client_Updater::backup_root() . '/' . $backup_id . '.sql.gz';
 	}
 
 	/**
@@ -317,7 +317,7 @@ class DatabaseTest extends Hop_Connector_Test_Case {
 	 * @return void
 	 */
 	private function set_step_seconds( $seconds ) {
-		$property = new ReflectionProperty( 'Hop_Connector_Database', 'step_seconds' );
+		$property = new ReflectionProperty( 'Fred_Espace_Client_Database', 'step_seconds' );
 		$property->setAccessible( true );
 		$property->setValue( null, $seconds );
 	}

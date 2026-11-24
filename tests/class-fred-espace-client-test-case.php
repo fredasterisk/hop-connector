@@ -3,7 +3,7 @@
  * Base test case: the platform's key pair, and signed REST requests as the
  * platform sends them.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 // phpcs:disable -- Test code, never loaded by WordPress.
@@ -11,7 +11,7 @@
 /**
  * Shared helpers.
  */
-abstract class Hop_Connector_Test_Case extends WP_UnitTestCase {
+abstract class Fred_Espace_Client_Test_Case extends WP_UnitTestCase {
 
 	/**
 	 * Identifier of the platform's key in the tests.
@@ -88,7 +88,7 @@ abstract class Hop_Connector_Test_Case extends WP_UnitTestCase {
 	 * @return void
 	 */
 	protected function pair() {
-		Hop_Connector_Keys::activate( self::KEY_ID, $this->platform_public_key() );
+		Fred_Espace_Client_Keys::activate( self::KEY_ID, $this->platform_public_key() );
 	}
 
 	/**
@@ -114,7 +114,7 @@ abstract class Hop_Connector_Test_Case extends WP_UnitTestCase {
 		$key_id    = $overrides['key_id'] ?? self::KEY_ID;
 		$timestamp = (string) ( $overrides['timestamp'] ?? time() );
 		$nonce     = $overrides['nonce'] ?? bin2hex( random_bytes( 16 ) );
-		$canonical = Hop_Connector_Signature::canonical( $method, $route, $timestamp, $nonce, $key_id, $body );
+		$canonical = Fred_Espace_Client_Signature::canonical( $method, $route, $timestamp, $nonce, $key_id, $body );
 
 		if ( isset( $overrides['secret'] ) ) {
 			$signature = hash_hmac( 'sha256', $canonical, $overrides['secret'] );

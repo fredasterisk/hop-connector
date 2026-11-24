@@ -2,7 +2,7 @@
 /**
  * One-click login: single-use token valid for a few seconds.
  *
- * @package Hop_Connector
+ * @package Fred_Espace_Client
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -10,9 +10,9 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Issues and consumes magic login tokens.
  */
-class Hop_Connector_Login {
+class Fred_Espace_Client_Login {
 
-	const OPTION_PREFIX = 'hop_connector_login_';
+	const OPTION_PREFIX = 'fred_espace_client_login_';
 
 	const TTL = 45;
 
@@ -21,13 +21,13 @@ class Hop_Connector_Login {
 	/**
 	 * Marks the accounts the connector created for the agency.
 	 */
-	const AGENCY_META = 'hop_connector_agency_account';
+	const AGENCY_META = 'fred_espace_client_agency_account';
 
 	/**
 	 * Login links issued in the last hour, outside the login_ prefix that the
 	 * hourly cleanup sweeps.
 	 */
-	const OPTION_RATE = 'hop_connector_rate_login';
+	const OPTION_RATE = 'fred_espace_client_rate_login';
 
 	const MAX_PER_HOUR = 10;
 
@@ -45,11 +45,11 @@ class Hop_Connector_Login {
 	 */
 	public static function issue( $email, $name = '' ) {
 		if ( '' === $email ) {
-			return new WP_Error( 'hop_email_required', __( 'La connexion demande l’adresse courriel du membre de l’agence.', 'hop-connector' ), array( 'status' => 400 ) );
+			return new WP_Error( 'hop_email_required', __( 'La connexion demande l’adresse courriel du membre de l’agence.', 'fred-espace-client' ), array( 'status' => 400 ) );
 		}
 
 		if ( ! self::take_rate() ) {
-			return new WP_Error( 'hop_login_rate', __( 'Trop de connexions demandées dans la dernière heure. Réessayer plus tard.', 'hop-connector' ), array( 'status' => 429 ) );
+			return new WP_Error( 'hop_login_rate', __( 'Trop de connexions demandées dans la dernière heure. Réessayer plus tard.', 'fred-espace-client' ), array( 'status' => 429 ) );
 		}
 
 		$account = self::agency_account( $email, $name );
@@ -62,7 +62,7 @@ class Hop_Connector_Login {
 		$created = $account['created'];
 
 		if ( ! $user || ! user_can( $user, 'manage_options' ) ) {
-			return new WP_Error( 'hop_no_user', __( 'Aucun compte administrateur disponible.', 'hop-connector' ), array( 'status' => 404 ) );
+			return new WP_Error( 'hop_no_user', __( 'Aucun compte administrateur disponible.', 'fred-espace-client' ), array( 'status' => 404 ) );
 		}
 
 		$token = bin2hex( random_bytes( 32 ) );
@@ -99,7 +99,7 @@ class Hop_Connector_Login {
 	 */
 	private static function agency_account( $email, $name ) {
 		if ( ! is_email( $email ) || sanitize_email( $email ) !== $email ) {
-			return new WP_Error( 'hop_bad_email', __( 'Adresse courriel invalide pour la connexion.', 'hop-connector' ), array( 'status' => 400 ) );
+			return new WP_Error( 'hop_bad_email', __( 'Adresse courriel invalide pour la connexion.', 'fred-espace-client' ), array( 'status' => 400 ) );
 		}
 
 		$user = get_user_by( 'email', $email );
@@ -109,7 +109,7 @@ class Hop_Connector_Login {
 				return new WP_Error(
 					'hop_account_not_admin',
 					/* translators: %s: email address. */
-					sprintf( __( 'Le compte %s existe sur ce site sans être administrateur. Donnez-lui ce rôle ou supprimez-le, puis réessayez.', 'hop-connector' ), $email ),
+					sprintf( __( 'Le compte %s existe sur ce site sans être administrateur. Donnez-lui ce rôle ou supprimez-le, puis réessayez.', 'fred-espace-client' ), $email ),
 					array( 'status' => 409 )
 				);
 			}
@@ -133,19 +133,19 @@ class Hop_Connector_Login {
 		);
 
 		if ( is_wp_error( $user_id ) ) {
-			return new WP_Error( 'hop_account_failed', __( 'Impossible de créer le compte de l\'agence : ', 'hop-connector' ) . $user_id->get_error_message(), array( 'status' => 500 ) );
+			return new WP_Error( 'hop_account_failed', __( 'Impossible de créer le compte de l\'agence : ', 'fred-espace-client' ) . $user_id->get_error_message(), array( 'status' => 500 ) );
 		}
 
 		update_user_meta( $user_id, self::AGENCY_META, time() );
 
 		$login = (string) get_userdata( $user_id )->user_login;
 
-		Hop_Connector_Log::record( 'account_created', array( 'note' => $login . ' <' . $email . '>' ) );
-		Hop_Connector_Log::notify(
-			__( 'Un compte administrateur a été créé pour l’agence', 'hop-connector' ),
+		Fred_Espace_Client_Log::record( 'account_created', array( 'note' => $login . ' <' . $email . '>' ) );
+		Fred_Espace_Client_Log::notify(
+			__( 'Un compte administrateur a été créé pour l’agence', 'fred-espace-client' ),
 			sprintf(
 				/* translators: 1: login name, 2: email address. */
-				__( "Le Connecteur Espace client vient de créer le compte administrateur %1\$s (%2\$s), pour un membre de l’agence qui se connecte depuis la plateforme.\n\nCe compte n’accepte ni mot de passe ni réinitialisation : il n’ouvre que par la plateforme. Il est supprimé quand le site est déconnecté.\n\nSi cette création n’était pas prévue : déconnecter le site dans Réglages > Espace client, puis prévenir l’agence.", 'hop-connector' ),
+				__( "Le Connecteur Espace client vient de créer le compte administrateur %1\$s (%2\$s), pour un membre de l’agence qui se connecte depuis la plateforme.\n\nCe compte n’accepte ni mot de passe ni réinitialisation : il n’ouvre que par la plateforme. Il est supprimé quand le site est déconnecté.\n\nSi cette création n’était pas prévue : déconnecter le site dans Réglages > Espace client, puis prévenir l’agence.", 'fred-espace-client' ),
 				$login,
 				$email
 			)
@@ -203,7 +203,7 @@ class Hop_Connector_Login {
 		nocache_headers();
 
 		if ( ! preg_match( '/^[a-f0-9]{64}$/', $token ) ) {
-			wp_die( esc_html__( 'Lien de connexion invalide.', 'hop-connector' ), '', array( 'response' => 403 ) );
+			wp_die( esc_html__( 'Lien de connexion invalide.', 'fred-espace-client' ), '', array( 'response' => 403 ) );
 		}
 
 		$option = self::OPTION_PREFIX . hash( 'sha256', $token );
@@ -211,13 +211,13 @@ class Hop_Connector_Login {
 
 		// delete_option() only succeeds once: two simultaneous requests cannot both log in.
 		if ( ! is_array( $data ) || ! delete_option( $option ) || (int) $data['expires'] < time() ) {
-			wp_die( esc_html__( 'Lien de connexion expiré ou déjà utilisé.', 'hop-connector' ), '', array( 'response' => 403 ) );
+			wp_die( esc_html__( 'Lien de connexion expiré ou déjà utilisé.', 'fred-espace-client' ), '', array( 'response' => 403 ) );
 		}
 
 		$user = get_user_by( 'id', (int) $data['user_id'] );
 
 		if ( ! $user || ! user_can( $user, 'manage_options' ) ) {
-			wp_die( esc_html__( 'Lien de connexion invalide.', 'hop-connector' ), '', array( 'response' => 403 ) );
+			wp_die( esc_html__( 'Lien de connexion invalide.', 'fred-espace-client' ), '', array( 'response' => 403 ) );
 		}
 
 		wp_set_current_user( $user->ID );
@@ -312,7 +312,7 @@ class Hop_Connector_Login {
 	 */
 	public static function refuse_password_login( $user ) {
 		if ( $user instanceof WP_User && self::is_agency_account( $user->ID ) ) {
-			return new WP_Error( 'hop_agency_account', __( 'Ce compte de l’agence s’ouvre seulement depuis l’espace client.', 'hop-connector' ) );
+			return new WP_Error( 'hop_agency_account', __( 'Ce compte de l’agence s’ouvre seulement depuis l’espace client.', 'fred-espace-client' ) );
 		}
 
 		return $user;
@@ -343,7 +343,7 @@ class Hop_Connector_Login {
 		}
 
 		if ( is_multisite() ) {
-			Hop_Connector_Log::record( 'accounts_kept', array( 'note' => __( 'multisite : comptes de l’agence à retirer à la main', 'hop-connector' ) ) );
+			Fred_Espace_Client_Log::record( 'accounts_kept', array( 'note' => __( 'multisite : comptes de l’agence à retirer à la main', 'fred-espace-client' ) ) );
 
 			return 0;
 		}
@@ -367,7 +367,7 @@ class Hop_Connector_Login {
 		}
 
 		if ( null === $heir ) {
-			Hop_Connector_Log::record( 'accounts_kept', array( 'note' => __( 'aucun autre administrateur pour reprendre les contenus', 'hop-connector' ) ) );
+			Fred_Espace_Client_Log::record( 'accounts_kept', array( 'note' => __( 'aucun autre administrateur pour reprendre les contenus', 'fred-espace-client' ) ) );
 
 			return 0;
 		}
@@ -382,7 +382,7 @@ class Hop_Connector_Login {
 			}
 		}
 
-		Hop_Connector_Log::record( 'accounts_deleted', array( 'note' => (string) $deleted ) );
+		Fred_Espace_Client_Log::record( 'accounts_deleted', array( 'note' => (string) $deleted ) );
 
 		return $deleted;
 	}
