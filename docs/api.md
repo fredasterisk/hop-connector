@@ -64,6 +64,13 @@ sans action ne fait que lire.
 
 `HOP_CONNECTOR_DENY` et `HOP_CONNECTOR_DISABLED`, les constantes de l'ancien nom, comptent toujours.
 
+`/updates/refresh` fait la vérification depuis l'admin. Le site s'appelle lui-même sur
+`admin-ajax.php` (action `fred_espace_client_refresh`), avec un jeton à usage unique valable
+2 minutes. Les extensions premium qui ne chargent leur updater que dans l'admin (Freemius,
+Blocksy Companion Pro) y annoncent leurs mises à jour. Si cet appel échoue, la vérification se
+fait dans la requête REST : les mises à jour venues d'ailleurs que wordpress.org, déjà connues,
+sont gardées. La réponse ne change pas.
+
 ## Point de secours
 
 Il répond avant le chargement des extensions, même quand une mise à jour a fait planter le site :

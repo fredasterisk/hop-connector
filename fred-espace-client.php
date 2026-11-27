@@ -33,6 +33,7 @@ require_once FRED_ESPACE_CLIENT_DIR . 'includes/class-fred-espace-client-auth.ph
 require_once FRED_ESPACE_CLIENT_DIR . 'includes/class-fred-espace-client-inventory.php';
 require_once FRED_ESPACE_CLIENT_DIR . 'includes/class-fred-espace-client-login.php';
 require_once FRED_ESPACE_CLIENT_DIR . 'includes/class-fred-espace-client-updater.php';
+require_once FRED_ESPACE_CLIENT_DIR . 'includes/class-fred-espace-client-admin-refresh.php';
 require_once FRED_ESPACE_CLIENT_DIR . 'includes/class-fred-espace-client-predecessor.php';
 require_once FRED_ESPACE_CLIENT_DIR . 'includes/class-fred-espace-client-database.php';
 require_once FRED_ESPACE_CLIENT_DIR . 'includes/class-fred-espace-client-pull.php';
@@ -53,6 +54,9 @@ add_filter( 'upgrader_source_selection', array( 'Fred_Espace_Client_Release', 'c
 // New versions of the connector, served by the platform.
 Fred_Espace_Client_Self_Update::register();
 add_action( 'rest_api_init', array( 'Fred_Espace_Client_Rest', 'register_routes' ) );
+// The update check made as the admin, called by the connector itself: no session, a one-time token.
+add_action( 'wp_ajax_nopriv_' . Fred_Espace_Client_Admin_Refresh::ACTION, array( 'Fred_Espace_Client_Admin_Refresh', 'handle' ) );
+add_action( 'wp_ajax_' . Fred_Espace_Client_Admin_Refresh::ACTION, array( 'Fred_Espace_Client_Admin_Refresh', 'handle' ) );
 add_action( 'init', array( 'Fred_Espace_Client_Login', 'maybe_consume' ), 1 );
 add_filter( 'allow_password_reset', array( 'Fred_Espace_Client_Login', 'refuse_password_reset' ), 10, 2 );
 // After every other check: a password, a cookie or an application password.

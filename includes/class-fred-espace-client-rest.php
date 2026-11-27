@@ -368,9 +368,7 @@ class Fred_Espace_Client_Rest {
 	 * @return WP_REST_Response
 	 */
 	public static function updates_refresh() {
-		Fred_Espace_Client_Updater::refresh();
-
-		return self::respond( Fred_Espace_Client_Inventory::inventory() );
+		return self::respond( Fred_Espace_Client_Admin_Refresh::refresh_and_report() );
 	}
 
 	/**

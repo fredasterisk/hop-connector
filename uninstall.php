@@ -58,6 +58,7 @@ delete_option( 'fred_espace_client_backup_parent' );
 delete_option( 'fred_espace_client_last_fatal' );
 delete_option( 'fred_espace_client_copying' );
 delete_option( 'fred_espace_client_log' );
+delete_option( 'fred_espace_client_refresh_token' );
 delete_option( 'fred_espace_client_rate_login' );
 delete_option( 'fred_espace_client_remove_predecessor' );
 delete_site_transient( 'fred_espace_client_latest' );

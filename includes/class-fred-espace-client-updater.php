@@ -33,12 +33,97 @@ class Fred_Espace_Client_Updater {
 	public static function refresh() {
 		self::load_admin();
 
+		// A premium updater that only loads in the admin is absent from a
+		// check made elsewhere: what it announced before is kept.
+		$plugins = self::offers_from_elsewhere( 'update_plugins' );
+		$themes  = self::offers_from_elsewhere( 'update_themes' );
+
 		wp_clean_plugins_cache( true );
 		wp_clean_themes_cache( true );
 		Fred_Espace_Client_Self_Update::forget();
 		wp_version_check( array(), true );
 		wp_update_plugins();
 		wp_update_themes();
+
+		self::keep_offers( 'update_plugins', $plugins );
+		self::keep_offers( 'update_themes', $themes );
+	}
+
+	/**
+	 * The updates offered by a source other than wordpress.org, still newer
+	 * than what is installed. The connector's own is left out: it is checked again.
+	 *
+	 * @param  string $transient  update_plugins or update_themes.
+	 * @return array<string,mixed>  The offers, keyed as in the transient's response.
+	 */
+	public static function offers_from_elsewhere( $transient ) {
+		$updates = get_site_transient( $transient );
+
+		if ( ! is_object( $updates ) || empty( $updates->response ) || ! is_array( $updates->response ) ) {
+			return array();
+		}
+
+		$own     = plugin_basename( FRED_ESPACE_CLIENT_DIR . 'fred-espace-client.php' );
+		$plugins = 'update_plugins' === $transient ? get_plugins() : array();
+		$kept    = array();
+
+		foreach ( $updates->response as $key => $offer ) {
+			$offer   = (array) $offer;
+			$package = isset( $offer['package'] ) ? (string) $offer['package'] : '';
+			$version = isset( $offer['new_version'] ) ? (string) $offer['new_version'] : '';
+
+			if ( $key === $own || '' === $version || 'downloads.wordpress.org' === wp_parse_url( $package, PHP_URL_HOST ) ) {
+				continue;
+			}
+
+			if ( 'update_plugins' === $transient ) {
+				$installed = isset( $plugins[ $key ]['Version'] ) ? (string) $plugins[ $key ]['Version'] : '';
+			} else {
+				$theme     = wp_get_theme( $key );
+				$installed = $theme->exists() ? (string) $theme->get( 'Version' ) : '';
+			}
+
+			if ( '' !== $installed && version_compare( $version, $installed, '>' ) ) {
+				$kept[ $key ] = $updates->response[ $key ];
+			}
+		}
+
+		return $kept;
+	}
+
+	/**
+	 * Put back the offers the new check did not see.
+	 *
+	 * @param  string              $transient  update_plugins or update_themes.
+	 * @param  array<string,mixed> $offers     Offers known before the check.
+	 * @return void
+	 */
+	private static function keep_offers( $transient, array $offers ) {
+		if ( array() === $offers ) {
+			return;
+		}
+
+		$updates = get_site_transient( $transient );
+
+		if ( ! is_object( $updates ) ) {
+			return;
+		}
+
+		$response = isset( $updates->response ) && is_array( $updates->response ) ? $updates->response : array();
+		$missing  = array_diff_key( $offers, $response );
+
+		if ( array() === $missing ) {
+			return;
+		}
+
+		$updates->response = array_merge( $response, $missing );
+
+		// A plugin listed as up to date would hide the offer in the admin.
+		if ( isset( $updates->no_update ) && is_array( $updates->no_update ) ) {
+			$updates->no_update = array_diff_key( $updates->no_update, $missing );
+		}
+
+		set_site_transient( $transient, $updates );
 	}
 
 	/**
