@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Connecteur Espace client
  * Description:       Relie ce site à l’espace client (inventaire, mises à jour, sauvegardes, connexion en un clic) par des requêtes signées.
- * Version:           0.22.0
+ * Version:           0.23.0
  * Requires at least: 6.5
  * Requires PHP:      7.4
  * Author:            Fred Robert
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 if ( ! defined( 'FRED_ESPACE_CLIENT_VERSION' ) ) {
-	define( 'FRED_ESPACE_CLIENT_VERSION', '0.22.0' );
+	define( 'FRED_ESPACE_CLIENT_VERSION', '0.23.0' );
 }
 
 define( 'FRED_ESPACE_CLIENT_DIR', plugin_dir_path( __FILE__ ) );
